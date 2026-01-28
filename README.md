@@ -69,9 +69,12 @@ Launches a coding agent (`gemini-cli`, `qwen`, `aider`, etc.) as a subprocess.
 
 After execution:
 
-1. Success criteria are run automatically
-2. If *any* criterion fails, the mission is marked as failed—even if the agent exited cleanly
-3. Failures are **classified** into:
+1. Success criteria are run automatically. Supports shell commands and state-based invariants:
+   * `exists: <path>` (file or directory existence)
+   * `contains: <path> <regex>` (content validation)
+   * `not_contains: <path> <regex>` (absence validation)
+2. If *any* criterion fails, the mission is marked as failed—even if the agent exited cleanly.
+3. Failures are **grounded and classified** using execution signals (exit codes, error patterns) into:
 
    * `LOGIC`
    * `TOOLING`

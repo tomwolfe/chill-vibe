@@ -124,6 +124,7 @@ def main():
             
             # Machine-verifiable success check
             success_passed = True
+            verification_results = []
             if exit_code == 0:
                 success_passed, verification_results = verify_success(success_criteria, args.path)
                 if not success_passed:
@@ -138,7 +139,14 @@ def main():
                 # Classify and recover
                 agent = registry[args.agent]
                 failure_output = "".join(list(agent.last_output))
-                recovery_prompt, classification = get_recovery_strategy(args.path, args.model, agent_prompt, failure_output, config_data)
+                recovery_prompt, classification = get_recovery_strategy(
+                    args.path, 
+                    args.model, 
+                    agent_prompt, 
+                    failure_output, 
+                    exit_code=exit_code,
+                    config_data=config_data
+                )
                 
                 print(f"[*] Failure classification: {classification}")
                 
@@ -149,7 +157,7 @@ def main():
                     
                     # Verify again after recovery
                     if exit_code == 0:
-                        success_passed, _ = verify_success(success_criteria, args.path)
+                        success_passed, verification_results = verify_success(success_criteria, args.path)
                         if not success_passed:
                             exit_code = 1
                 else:
@@ -167,7 +175,8 @@ def main():
                 status=status, 
                 exit_code=exit_code,
                 classification=classification,
-                success_criteria=success_criteria
+                success_criteria=success_criteria,
+                verification_results=verification_results
             )
     finally:
         if args.cleanup and os.path.exists(args.context_file):

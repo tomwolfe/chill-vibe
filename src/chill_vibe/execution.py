@@ -6,6 +6,8 @@ import threading
 import tty
 import termios
 import select
+import re
+from pathlib import Path
 
 import time
 import collections
@@ -148,7 +150,7 @@ def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
     return agent.run(agent_prompt)
 
 def verify_success(success_criteria, repo_path):
-    """Run machine-verifiable success criteria (shell commands)."""
+    """Run machine-verifiable success criteria (shell commands or invariants)."""
     if not success_criteria:
         return True, []
 
@@ -156,33 +158,77 @@ def verify_success(success_criteria, repo_path):
     results = []
     all_passed = True
     
-    for cmd in success_criteria:
-        print(f"[*] Running check: {cmd}")
+    for criterion in success_criteria:
+        print(f"[*] Running check: {criterion}")
         try:
-            # Run the command in the repo directory
-            process = subprocess.run(
-                cmd,
-                shell=True,
-                cwd=repo_path,
-                capture_output=True,
-                text=True
-            )
-            passed = (process.returncode == 0)
-            results.append({
-                "command": cmd,
-                "passed": passed,
-                "stdout": process.stdout,
-                "stderr": process.stderr
-            })
+            if criterion.startswith("exists:"):
+                # Check if file/dir exists
+                path_str = criterion[len("exists:"):].strip()
+                target_path = Path(repo_path) / path_str
+                passed = target_path.exists()
+                results.append({
+                    "command": criterion,
+                    "passed": passed,
+                    "info": f"Path {path_str} exists: {passed}"
+                })
+            elif criterion.startswith("contains:") or criterion.startswith("not_contains:"):
+                # Check if file contains/doesn't contain regex
+                is_negative = criterion.startswith("not_contains:")
+                prefix = "not_contains:" if is_negative else "contains:"
+                parts = criterion[len(prefix):].strip().split(None, 1)
+                if len(parts) < 2:
+                    raise ValueError(f"Invalid {prefix} criterion format. Expected '{prefix} <path> <regex>'")
+                
+                file_path_str, regex_pattern = parts
+                file_path = Path(repo_path) / file_path_str
+                
+                if not file_path.exists():
+                    passed = False
+                    info = f"File {file_path_str} does not exist"
+                else:
+                    with open(file_path, 'r') as f:
+                        content = f.read()
+                        # Use multiline search for better matching in files
+                        match = re.search(regex_pattern, content, re.MULTILINE | re.DOTALL)
+                        if is_negative:
+                            passed = not match
+                            info = f"Pattern '{regex_pattern}' not found in {file_path_str}" if passed else f"Pattern '{regex_pattern}' found in {file_path_str}"
+                        else:
+                            passed = bool(match)
+                            info = f"Pattern '{regex_pattern}' found in {file_path_str}" if passed else f"Pattern '{regex_pattern}' not found in {file_path_str}"
+                
+                results.append({
+                    "command": criterion,
+                    "passed": passed,
+                    "info": info
+                })
+            else:
+                # Default to shell command
+                process = subprocess.run(
+                    criterion,
+                    shell=True,
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True
+                )
+                passed = (process.returncode == 0)
+                results.append({
+                    "command": criterion,
+                    "passed": passed,
+                    "stdout": process.stdout,
+                    "stderr": process.stderr,
+                    "exit_code": process.returncode
+                })
+            
             if passed:
                 print(f"    [✓] Passed")
             else:
-                print(f"    [✗] Failed (exit code {process.returncode})")
+                print(f"    [✗] Failed")
                 all_passed = False
         except Exception as e:
             print(f"    [!] Error running check: {e}")
             results.append({
-                "command": cmd,
+                "command": criterion,
                 "passed": False,
                 "error": str(e)
             })

@@ -13,7 +13,7 @@ except ImportError:
     genai = None
     types = None
 
-def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, success_criteria=None):
+def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, success_criteria=None, verification_results=None):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
@@ -25,6 +25,7 @@ def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN", 
         "exit_code": exit_code,
         "classification": classification,
         "success_criteria": success_criteria,
+        "verification_results": verification_results,
         "agent_prompt": agent_prompt
     }
     try:
@@ -172,16 +173,50 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
         
     return agent_prompt, success_criteria
 
-def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, config_data=None):
-    """Generate a recovery strategy after an agent fails, with classification."""
+def classify_failure_signals(exit_code, last_output):
+    """Extract grounded execution signals from failure output."""
+    signals = []
+    
+    if exit_code == 127:
+        signals.append("COMMAND_NOT_FOUND")
+    elif exit_code == 130:
+        signals.append("SIGINT_INTERRUPTED")
+    elif exit_code == 137:
+        signals.append("SIGKILL_OOM")
+    
+    # Common error patterns
+    error_patterns = {
+        "PERMISSION_DENIED": [r"Permission denied", r"EACCES"],
+        "DEPENDENCY_MISSING": [r"ModuleNotFoundError", r"ImportError", r"npm ERR! missing"],
+        "TIMEOUT": [r"timed out", r"TimeoutExpired"],
+        "SYNTAX_ERROR": [r"SyntaxError"],
+        "TEST_FAILURE": [r"FAIL:", r"FAILED \(failures=", r"AssertionError"],
+        "DISK_FULL": [r"No space left on device", r"ENOSPC"]
+    }
+    
+    output_text = "".join(last_output)
+    for signal, patterns in error_patterns.items():
+        if any(re.search(p, output_text, re.IGNORECASE) for p in patterns):
+            signals.append(signal)
+            
+    return signals
+
+def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, exit_code=None, config_data=None):
+    """Generate a recovery strategy after an agent fails, with grounded classification."""
     if genai is None:
         print("Error: google-genai SDK not found.")
         sys.exit(1)
 
     client = genai.Client()
     
+    signals = classify_failure_signals(exit_code, failure_output) if exit_code is not None else []
+    signals_str = ", ".join(signals) if signals else "NONE"
+    
     prompt = (
         "The coding agent failed. Analyze the failure and provide a targeted recovery strategy.\n\n"
+        "--- EXECUTION SIGNALS ---\n"
+        f"Exit Code: {exit_code}\n"
+        f"Detected Signals: {signals_str}\n\n"
         "--- FAILURE CLASSIFICATION ---\n"
         "Classify the failure into one of these categories:\n"
         "- TOOLING: Command not found, permissions, or tool-specific errors.\n"
@@ -194,9 +229,10 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
         "--- FAILED OUTPUT (LAST 50 LINES) ---\n"
         f"{failure_output}\n\n"
         "--- INSTRUCTIONS ---\n"
-        "1. Provide your analysis and classification first.\n"
+        "1. Provide your analysis and classification first, incorporating the detected execution signals.\n"
         "2. Provide the failure classification wrapped in <classification> tags.\n"
-        "3. Provide a NEW, targeted agent prompt wrapped in <agent_prompt> tags to fix the issue.\n"
+        "3. Provide a NEW, targeted agent prompt wrapped in <agent_prompt> tags to fix the issue. "
+        "Explicitly address why the previous attempt failed and what to avoid.\n"
     )
     
     print(f"[*] Requesting recovery strategy from {model_id}...")
