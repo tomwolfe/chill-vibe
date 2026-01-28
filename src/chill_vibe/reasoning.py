@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 from .constants import DEFAULT_CONFIG
+from .context import MissionContract
 
 try:
     from google import genai
@@ -13,7 +14,7 @@ except ImportError:
     genai = None
     types = None
 
-def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, success_criteria=None, verification_results=None):
+def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
@@ -24,9 +25,10 @@ def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN", 
         "status": status,
         "exit_code": exit_code,
         "classification": classification,
-        "success_criteria": success_criteria,
+        "success_criteria": mission.success_criteria if hasattr(mission, 'success_criteria') else mission,
         "verification_results": verification_results,
-        "agent_prompt": agent_prompt
+        "agent_prompt": mission.agent_prompt if hasattr(mission, 'agent_prompt') else str(mission),
+        "objectives": mission.objectives if hasattr(mission, 'objectives') else []
     }
     try:
         with open(log_file, "a") as f:
@@ -61,6 +63,50 @@ def show_history():
     except Exception as e:
         print(f"Error reading history: {e}")
 
+def validate_mission(mission_contract, codebase_context, model_id, config_data=None):
+    """Second-pass validation of the mission contract."""
+    if genai is None:
+        return True, ""
+
+    client = genai.Client()
+    
+    mission_dict = {
+        'objectives': mission_contract.objectives,
+        'success_criteria': mission_contract.success_criteria,
+        'non_goals': mission_contract.non_goals,
+        'checklist': mission_contract.checklist,
+        'forbidden_actions': mission_contract.forbidden_actions,
+        'summary': mission_contract.summary
+    }
+    mission_json_str = json.dumps(mission_dict, indent=2)
+
+    prompt = (
+        "You are an expert mission auditor. Review the following mission contract for a coding agent.\n\n"
+        "--- MISSION CONTRACT ---\n"
+        f"{mission_json_str}\n\n"
+        "--- TASK ---\n"
+        "Audit this mission for:\n"
+        "1. Completeness: Do the success criteria fully cover the objectives?\n"
+        "2. Testability: Are all success criteria machine-verifiable?\n"
+        "3. Determinism: Are the instructions unambiguous?\n"
+        "4. Safety: Are there any forbidden actions that are missing?\n\n"
+        "If the mission is solid, respond with 'PASSED'. If it has flaws, respond with 'REJECTED' followed by a list of issues.\n"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt
+        )
+        result = response.text.strip()
+        if result.startswith("PASSED"):
+            return True, ""
+        else:
+            return False, result
+    except Exception as e:
+        print(f"[!] Warning: Mission validation failed to run: {e}")
+        return True, "" # Fallback to true if validation fails to execute
+
 def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, config_data=None, verbose=False):
     """Phase B: Strategic Reasoning"""
     if not os.path.exists(context_file):
@@ -83,10 +129,6 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     preamble = (
         "Critically analyze this project (attached), then give it a grade. "
         "I would like a prompt to give a coding agent to have the agent autonomously work on the attached codebase to achieve its goals for the project. "
-        "\n\n--- MISSION SPECIFICATION ---\n"
-        "1. Define clear, objective GOALS for the agent.\n"
-        "2. Define machine-verifiable SUCCESS CRITERIA (shell commands, file checks, or invariants) that MUST pass for the mission to be considered successful.\n"
-        "3. Generate a checklist-driven, deterministic AGENT PROMPT that avoids vague instructions.\n"
     )
     
     project_constraints = ""
@@ -98,9 +140,19 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
         f"{preamble}\n\n"
         "--- INSTRUCTIONS FOR YOUR RESPONSE ---\n"
         "1. Provide your analysis, grade, and goals first.\n"
-        "2. Provide the machine-verifiable SUCCESS CRITERIA in a block wrapped in <success_criteria> tags. Each line should be a single shell command that returns exit code 0 on success.\n"
-        "3. Provide the final AGENT PROMPT in a block wrapped in <agent_prompt> tags.\n"
-        "4. Ensure the agent prompt is checklist-driven, explicit, and self-contained.\n\n"
+        "2. Provide a structured mission contract in a block wrapped in <mission_contract> tags. "
+        "The block must be a valid JSON object with the following schema:\n"
+        "{\n"
+        "  \"objectives\": [\"string\"],\n"
+        "  \"non_goals\": [\"string\"],\n"
+        "  \"checklist\": [\"string\"],\n"
+        "  \"success_criteria\": [\"string\"],\n"
+        "  \"forbidden_actions\": [\"string\"],\n"
+        "  \"summary\": \"string\",\n"
+        "  \"agent_prompt\": \"string\"\n"
+        "}\n"
+        "3. Ensure the 'agent_prompt' is checklist-driven, explicit, and self-contained.\n"
+        "4. Success criteria must be machine-verifiable (shell commands, file checks like 'exists:path', 'contains:path regex', or 'not_contains:path regex').\n\n"
         f"--- CODEBASE CONTEXT ---\n{codebase_context}"
         f"{project_constraints}"
     )
@@ -159,19 +211,48 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
 
     full_text = response.text
     
-    agent_prompt_match = re.search(r"(?:```(?:xml|html)?\s*)?<agent_prompt>(.*?)</agent_prompt>(?:\s*```)?", full_text, re.DOTALL)
-    if agent_prompt_match:
-        agent_prompt = agent_prompt_match.group(1).strip()
-    else:
-        print("[!] Warning: Could not find <agent_prompt> tags in response. Using full response.")
-        agent_prompt = full_text
+    mission_contract_match = re.search(r"(?:```(?:json)?\s*)?<mission_contract>(.*?)</mission_contract>(?:\s*```)?", full_text, re.DOTALL)
+    if not mission_contract_match:
+        print("[!] Error: Could not find <mission_contract> tags in response.")
+        sys.exit(1)
 
-    success_criteria_match = re.search(r"(?:```(?:xml|html)?\s*)?<success_criteria>(.*?)</success_criteria>(?:\s*```)?", full_text, re.DOTALL)
-    success_criteria = []
-    if success_criteria_match:
-        success_criteria = [line.strip() for line in success_criteria_match.group(1).strip().split("\n") if line.strip()]
+    try:
+        mission_json = mission_contract_match.group(1).strip()
+        # Handle cases where the model might wrap JSON in extra backticks inside the tag
+        if mission_json.startswith("```json"):
+            mission_json = mission_json[7:]
+        if mission_json.startswith("```"):
+            mission_json = mission_json[3:]
+        if mission_json.endswith("```"):
+            mission_json = mission_json[:-3]
         
-    return agent_prompt, success_criteria
+        mission_data = json.loads(mission_json.strip())
+        mission = MissionContract(
+            objectives=mission_data.get("objectives", []),
+            success_criteria=mission_data.get("success_criteria", []),
+            agent_prompt=mission_data.get("agent_prompt", ""),
+            non_goals=mission_data.get("non_goals", []),
+            checklist=mission_data.get("checklist", []),
+            forbidden_actions=mission_data.get("forbidden_actions", []),
+            summary=mission_data.get("summary", "")
+        )
+    except Exception as e:
+        print(f"[!] Error parsing mission contract JSON: {e}")
+        # Print the raw text for debugging if JSON parsing fails
+        if verbose:
+            print("--- RAW MISSION JSON ---")
+            print(mission_contract_match.group(1))
+        sys.exit(1)
+
+    # Perform second-pass validation
+    print("[*] Validating mission contract (second pass)...")
+    valid, validation_msg = validate_mission(mission, codebase_context, model_id, config_data)
+    if not valid:
+        print(f"[!] Mission contract rejected by validator:\n{validation_msg}")
+        # In a real scenario, we might want to re-try or fail. 
+        # For now, let's just warn and continue if it's not catastrophic.
+    
+    return mission
 
 def classify_failure_signals(exit_code, last_output):
     """Extract grounded execution signals from failure output."""
@@ -202,7 +283,7 @@ def classify_failure_signals(exit_code, last_output):
     return signals
 
 def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, exit_code=None, config_data=None):
-    """Generate a recovery strategy after an agent fails, with grounded classification."""
+    """Generate a recovery strategy after an agent fails, with grounded classification and memory."""
     if genai is None:
         print("Error: google-genai SDK not found.")
         sys.exit(1)
@@ -212,6 +293,32 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     signals = classify_failure_signals(exit_code, failure_output) if exit_code is not None else []
     signals_str = ", ".join(signals) if signals else "NONE"
     
+    # Read history for memory
+    history_context = ""
+    log_file = Path(".chillvibe_logs.jsonl")
+    if log_file.exists():
+        try:
+            with open(log_file, "r") as f:
+                # Get last 5 failed missions for context
+                failed_entries = []
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("status") == "FAILED":
+                            failed_entries.append(entry)
+                    except json.JSONDecodeError:
+                        continue
+                
+                if failed_entries:
+                    history_context = "\n--- RECENT FAILURE HISTORY ---\n"
+                    for entry in failed_entries[-5:]:
+                        history_context += f"- Date: {entry.get('timestamp')}\n"
+                        history_context += f"  Classification: {entry.get('classification')}\n"
+                        history_context += f"  Objectives: {', '.join(entry.get('objectives', []))}\n"
+                        history_context += f"  Exit Code: {entry.get('exit_code')}\n"
+        except Exception as e:
+            print(f"[!] Warning: Could not read history for recovery: {e}")
+
     prompt = (
         "The coding agent failed. Analyze the failure and provide a targeted recovery strategy.\n\n"
         "--- EXECUTION SIGNALS ---\n"
@@ -224,12 +331,13 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
         "- ENVIRONMENT: Missing dependencies, environment variables, or infrastructure issues.\n"
         "- AMBIGUITY: Original instructions were unclear or contradictory.\n"
         "- UNKNOWN: Failure reason is not apparent from the output.\n\n"
+        f"{history_context}\n"
         "--- ORIGINAL PROMPT ---\n"
         f"{original_prompt}\n\n"
         "--- FAILED OUTPUT (LAST 50 LINES) ---\n"
         f"{failure_output}\n\n"
         "--- INSTRUCTIONS ---\n"
-        "1. Provide your analysis and classification first, incorporating the detected execution signals.\n"
+        "1. Provide your analysis and classification first, incorporating the detected execution signals and historical context if relevant.\n"
         "2. Provide the failure classification wrapped in <classification> tags.\n"
         "3. Provide a NEW, targeted agent prompt wrapped in <agent_prompt> tags to fix the issue. "
         "Explicitly address why the previous attempt failed and what to avoid.\n"

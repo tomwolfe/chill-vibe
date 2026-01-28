@@ -45,13 +45,22 @@ class TestChillVibe(unittest.TestCase):
         with patch('google.genai.Client') as mock_client_class:
             mock_client = mock_client_class.return_value
             mock_response = MagicMock()
-            mock_response.text = "Analysis... <success_criteria>ls -R</success_criteria> <agent_prompt>Work on this project</agent_prompt> Goals..."
+            mission_contract = {
+                "objectives": ["Goal 1"],
+                "success_criteria": ["ls -R"],
+                "agent_prompt": "Work on this project",
+                "summary": "Mission Summary"
+            }
+            mock_response.text = f"<mission_contract>{json.dumps(mission_contract)}</mission_contract>"
             mock_client.models.generate_content.return_value = mock_response
             
-            prompt, criteria = reasoning.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH")
+            # Mock validate_mission to return True
+            with patch('chill_vibe.reasoning.validate_mission', return_value=(True, "")):
+                mission = reasoning.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH")
             
-            self.assertEqual(prompt, "Work on this project")
-            self.assertEqual(criteria, ["ls -R"])
+            self.assertEqual(mission.agent_prompt, "Work on this project")
+            self.assertEqual(mission.success_criteria, ["ls -R"])
+            self.assertEqual(mission.objectives, ["Goal 1"])
             mock_client.models.generate_content.assert_called_once()
 
     @patch('subprocess.Popen')
@@ -84,7 +93,13 @@ class TestChillVibe(unittest.TestCase):
 
     @patch('builtins.open', new_callable=mock_open)
     def test_log_mission(self, mock_file):
-        reasoning.log_mission("New Prompt", "model-x", "gemini-cli", 12.34, status="COMPLETED", classification="LOGIC", success_criteria=["test 1"])
+        mission = context.MissionContract(
+            objectives=["Goal 1"],
+            success_criteria=["test 1"],
+            agent_prompt="New Prompt",
+            summary="Summary"
+        )
+        reasoning.log_mission(mission, "model-x", "gemini-cli", 12.34, status="COMPLETED", classification="LOGIC")
         
         mock_file.assert_called_with(Path(".chillvibe_logs.jsonl"), "a")
         handle = mock_file()
@@ -94,6 +109,7 @@ class TestChillVibe(unittest.TestCase):
         self.assertEqual(log_entry["classification"], "LOGIC")
         self.assertEqual(log_entry["success_criteria"], ["test 1"])
         self.assertEqual(log_entry["status"], "COMPLETED")
+        self.assertEqual(log_entry["objectives"], ["Goal 1"])
 
     @patch('builtins.print')
     @patch('builtins.input', return_value='n')

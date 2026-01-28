@@ -8,7 +8,7 @@ from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, get_recovery_strategy
-from .execution import run_coding_agent, verify_success
+from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary
 
 def get_parser(registry):
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
@@ -107,26 +107,45 @@ def main():
         
         # Phase B: Strategic Reasoning
         start_time = time.time()
-        agent_prompt, success_criteria = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
+        mission = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
         duration = time.time() - start_time
         
+        # Display Mission Summary
+        print("\n--- MISSION SUMMARY ---")
+        print(f"Goal: {mission.summary}")
+        print("\nObjectives:")
+        for obj in mission.objectives:
+            print(f"- {obj}")
+        if mission.non_goals:
+            print("\nNon-Goals:")
+            for ng in mission.non_goals:
+                print(f"- {ng}")
+        if mission.forbidden_actions:
+            print("\nForbidden Actions:")
+            for fa in mission.forbidden_actions:
+                print(f"- {fa}")
+        print("-----------------------\n")
+
         if args.dry_run:
-            log_mission(agent_prompt, args.model, args.agent, duration, status="DRY_RUN", exit_code=0, success_criteria=success_criteria)
+            log_mission(mission, args.model, args.agent, duration, status="DRY_RUN", exit_code=0)
             print("\n--- GENERATED AGENT PROMPT ---")
-            print(agent_prompt)
+            print(mission.agent_prompt)
             print("\n--- SUCCESS CRITERIA ---")
-            for sc in success_criteria:
+            for sc in mission.success_criteria:
                 print(f"- {sc}")
             print("------------------------------")
         else:
+            # Capture baseline before execution for 'no_new_files' check
+            file_baseline = get_file_baseline(args.path)
+
             # Phase C: Autonomous Execution
-            exit_code = run_coding_agent(args.agent, agent_prompt, registry, config_data)
+            exit_code = run_coding_agent(args.agent, mission.agent_prompt, registry, config_data)
             
             # Machine-verifiable success check
             success_passed = True
             verification_results = []
             if exit_code == 0:
-                success_passed, verification_results = verify_success(success_criteria, args.path)
+                success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline)
                 if not success_passed:
                     print("[!] Agent finished with exit code 0, but success criteria failed.")
                     exit_code = 1 # Force failure if criteria not met
@@ -142,7 +161,7 @@ def main():
                 recovery_prompt, classification = get_recovery_strategy(
                     args.path, 
                     args.model, 
-                    agent_prompt, 
+                    mission.agent_prompt, 
                     failure_output, 
                     exit_code=exit_code,
                     config_data=config_data
@@ -153,11 +172,12 @@ def main():
                 if recovery_prompt:
                     print(f"[*] Applying recovery strategy (Category: {classification})...")
                     exit_code = run_coding_agent(args.agent, recovery_prompt, registry, config_data)
-                    agent_prompt = recovery_prompt # Update for logging
+                    # For logging purposes, we could create a temporary mission object or just update the prompt
+                    mission.agent_prompt = recovery_prompt 
                     
                     # Verify again after recovery
                     if exit_code == 0:
-                        success_passed, verification_results = verify_success(success_criteria, args.path)
+                        success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline)
                         if not success_passed:
                             exit_code = 1
                 else:
@@ -168,16 +188,23 @@ def main():
                 status = "INTERRUPTED"
             
             log_mission(
-                agent_prompt, 
+                mission, 
                 args.model, 
                 args.agent, 
                 duration, 
                 status=status, 
                 exit_code=exit_code,
                 classification=classification,
-                success_criteria=success_criteria,
                 verification_results=verification_results
             )
+            
+            # Post-run summary
+            if exit_code == 0:
+                print("\n[✓] Mission successful. All criteria passed.")
+                print(get_change_summary(args.path))
+            elif exit_code != 130:
+                print("\n[✗] Mission failed. Check logs for details.")
+                print(get_change_summary(args.path))
     finally:
         if args.cleanup and os.path.exists(args.context_file):
             print(f"[*] Cleaning up context file: {args.context_file}")

@@ -9,9 +9,73 @@ import re
 # Add src to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from chill_vibe import execution, reasoning
+from chill_vibe import execution, reasoning, context
 
 class TestEnhancedFeatures(unittest.TestCase):
+
+    def test_mission_contract_from_json(self):
+        mission_json = json.dumps({
+            "objectives": ["Goal 1"],
+            "success_criteria": ["exists: file.txt"],
+            "summary": "Fix the bug",
+            "checklist": ["Task 1"],
+            "non_goals": ["Goal 2"],
+            "forbidden_actions": ["Delete all"]
+        })
+        mission = context.MissionContract.from_json(mission_json, "Prompt")
+        self.assertEqual(mission.objectives, ["Goal 1"])
+        self.assertEqual(mission.success_criteria, ["exists: file.txt"])
+        self.assertEqual(mission.agent_prompt, "Prompt")
+        self.assertEqual(mission.summary, "Fix the bug")
+
+    def test_mission_contract_validation(self):
+        mission = context.MissionContract(
+            objectives=["Goal 1"],
+            success_criteria=["exists: file.txt"],
+            agent_prompt="Prompt"
+        )
+        valid, msg = mission.validate()
+        self.assertTrue(valid)
+
+        mission_invalid = context.MissionContract(
+            objectives=[],
+            success_criteria=[],
+            agent_prompt=""
+        )
+        valid, msg = mission_invalid.validate()
+        self.assertFalse(valid)
+
+    @patch('chill_vibe.execution.get_file_baseline')
+    def test_verify_success_no_new_files(self, mock_get_baseline):
+        mock_get_baseline.return_value = {"file1.txt"}
+        criteria = ["no_new_files"]
+        
+        # Scenario 1: No new files
+        with patch('chill_vibe.execution.get_file_baseline', side_effect=[{"file1.txt"}]) as mock_current:
+            passed, results = execution.verify_success(criteria, ".", file_baseline={"file1.txt"})
+            self.assertTrue(passed)
+
+        # Scenario 2: New files detected
+        with patch('chill_vibe.execution.get_file_baseline', side_effect=[{"file1.txt", "file2.txt"}]) as mock_current:
+            passed, results = execution.verify_success(criteria, ".", file_baseline={"file1.txt"})
+            self.assertFalse(passed)
+            self.assertIn("file2.txt", results[0]["info"])
+
+    @patch('subprocess.run')
+    def test_verify_success_pytest(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="Tests passed", stderr="")
+        criteria = ["pytest"]
+        passed, results = execution.verify_success(criteria, ".")
+        self.assertTrue(passed)
+        mock_run.assert_called_with("pytest", shell=True, cwd=".", capture_output=True, text=True)
+
+    @patch('subprocess.run')
+    def test_verify_success_ruff(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="Lint errors", stderr="")
+        criteria = ["ruff"]
+        passed, results = execution.verify_success(criteria, ".")
+        self.assertFalse(passed)
+        mock_run.assert_called_with("ruff check .", shell=True, cwd=".", capture_output=True, text=True)
 
     def test_verify_success_exists(self):
         criteria = ["exists: README.md"]
