@@ -183,7 +183,7 @@ class TestEnhancedFeatures(unittest.TestCase):
         mock_client.models.generate_content.return_value = mock_response
         
         output = ["ModuleNotFoundError: No module named 'requests'\n"]
-        prompt, classification, lessons = reasoning.get_recovery_strategy(".", "model-id", "Original Prompt", output, exit_code=1)
+        prompt, classification, lessons, signals = reasoning.get_recovery_strategy(".", "model-id", "Original Prompt", output, exit_code=1)
         
         self.assertEqual(classification, "TOOLING")
         self.assertEqual(prompt, "Try installing the module")
@@ -203,6 +203,23 @@ class TestEnhancedFeatures(unittest.TestCase):
         write_call = handle.write.call_args[0][0]
         log_entry = json.loads(write_call)
         self.assertEqual(log_entry["verification_results"], verification_results)
+
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_log_mission_with_budget(self, mock_exists, mock_file):
+        budget_report = {"total_tokens": 1234, "total_cost": 0.001}
+        mission = MagicMock()
+        mission.success_criteria = []
+        mission.agent_prompt = "Prompt"
+        mission.objectives = []
+        
+        reasoning.log_mission(mission, "model", "agent", 1.0, status="COMPLETED", budget_report=budget_report)
+        
+        handle = mock_file()
+        write_call = handle.write.call_args[0][0]
+        log_entry = json.loads(write_call)
+        self.assertEqual(log_entry["total_tokens"], 1234)
+        self.assertEqual(log_entry["total_cost"], 0.001)
 
 if __name__ == '__main__':
     unittest.main()

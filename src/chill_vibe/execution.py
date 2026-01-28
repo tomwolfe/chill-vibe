@@ -79,10 +79,11 @@ def output_reader(pipe, stream, buffer):
 
 class CodingAgent:
     """Represents a coding agent that can be executed."""
-    def __init__(self, name, command, dependencies=None):
+    def __init__(self, name, command, dependencies=None, env=None):
         self.name = name
         self.command = command
         self.dependencies = dependencies or []
+        self.env = env or {}
         self.extra_args = []
         self.last_output = collections.deque(maxlen=50)
 
@@ -101,13 +102,18 @@ class CodingAgent:
         full_command = self.command + self.extra_args
         self.last_output.clear()
         
+        # Merge provided env with current environment
+        run_env = os.environ.copy()
+        run_env.update(self.env)
+        
         process = subprocess.Popen(
             full_command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, # Merge stderr into stdout for easier tracking
             text=True,
-            bufsize=1
+            bufsize=1,
+            env=run_env
         )
         
         # 1. Pipe the initial agent prompt

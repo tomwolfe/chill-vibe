@@ -40,6 +40,7 @@ def get_parser(registry):
                         help="Initialize a default .chillvibe.yaml in the current directory")
     parser.add_argument("--history", action="store_true",
                         help="Show mission history")
+    parser.add_argument("--max-cost", type=float, help="Max cumulative cost for the mission in USD")
     parser.add_argument("--version", action="version", version=f"chill-vibe v{__version__}")
     return parser
 
@@ -54,7 +55,11 @@ def resolve_config(args, config_data, global_config):
         args.model = config_data.get("model") or global_config.get("model") or global_config.get("default_model") or DEFAULT_CONFIG["model"]
     
     if args.model == "flash":
-        args.model = "gemini-3-flash-preview"
+        args.model = "gemini-2.0-flash"
+
+    # Resolve Max Cost
+    if args.max_cost is None:
+        args.max_cost = config_data.get("max_cost") or global_config.get("max_cost")
 
     # Resolve Depth: CLI > Local > Global > Default
     if args.depth is None:
@@ -98,6 +103,10 @@ def main():
     # Resolve configuration hierarchy
     args = resolve_config(args, config_data, global_config)
 
+    # Initialize Budget Tracker
+    from .budget import BudgetTracker
+    budget_tracker = BudgetTracker(max_cost=args.max_cost)
+
     # Phase A: Context Extraction
     exclude_patterns = config_data.get("exclude_patterns", [])
     if args.exclude:
@@ -111,9 +120,23 @@ def main():
         
         # Phase B: Strategic Reasoning
         start_time = time.time()
-        mission = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
+        mission = get_strategic_reasoning(
+            args.path, 
+            args.context_file, 
+            args.model, 
+            args.thinking, 
+            config_data, 
+            args.verbose,
+            budget_tracker=budget_tracker
+        )
         duration = time.time() - start_time
         
+        # Check if we went over budget after strategic reasoning
+        if budget_tracker.is_over_budget():
+            print(f"[!] Over budget after strategic reasoning (Cost: ${budget_tracker.total_cost:.4f}). Stopping.")
+            log_mission(mission, args.model, args.agent, duration, status="OVER_BUDGET", budget_report=budget_tracker.get_usage_report())
+            sys.exit(1)
+
         # Display Mission Summary
         print("\n--- MISSION SUMMARY ---")
         print(f"Goal: {mission.summary}")
@@ -131,7 +154,7 @@ def main():
         print("-----------------------\n")
 
         if args.dry_run:
-            log_mission(mission, args.model, args.agent, duration, status="DRY_RUN", exit_code=0)
+            log_mission(mission, args.model, args.agent, duration, status="DRY_RUN", exit_code=0, budget_report=budget_tracker.get_usage_report())
             print("\n--- GENERATED AGENT PROMPT ---")
             print(mission.agent_prompt)
             print("\n--- SUCCESS CRITERIA ---")
@@ -180,6 +203,11 @@ def main():
                 last_classification = None
                 
                 while retry_count < max_retries and exit_code != 0 and exit_code != 130:
+                    # Check budget before each retry
+                    if budget_tracker.is_over_budget():
+                        print(f"[!] Over budget (Cost: ${budget_tracker.total_cost:.4f}). Stopping recovery.")
+                        break
+
                     retry_count += 1
                     print(f"\n[!] Mission failed (exit code {exit_code}). Entering structured recovery (Attempt {retry_count}/{max_retries})...")
                     
@@ -197,7 +225,8 @@ def main():
                         failure_output, 
                         exit_code=exit_code,
                         config_data=config_data,
-                        verification_results=verification_results
+                        verification_results=verification_results,
+                        budget_tracker=budget_tracker
                     )
                     
                     print(f"[*] Failure classification: {classification}")
@@ -235,6 +264,8 @@ def main():
             status = "COMPLETED" if exit_code == 0 else "FAILED"
             if exit_code == 130:
                 status = "INTERRUPTED"
+            if budget_tracker.is_over_budget():
+                status = "OVER_BUDGET"
             
             log_mission(
                 mission, 
@@ -246,7 +277,8 @@ def main():
                 classification=classification,
                 verification_results=verification_results,
                 lessons_learned=lessons_learned,
-                signals=signals
+                signals=signals,
+                budget_report=budget_tracker.get_usage_report()
             )
             
             # Post-run summary

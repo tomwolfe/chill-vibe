@@ -46,3 +46,37 @@ def test_memory_manager_get_top_lessons(tmp_path):
     lessons = memory.get_top_lessons("LOGIC", limit=3)
     assert len(lessons) == 3
     assert lessons == ["Lesson 4", "Lesson 3", "Lesson 2"]
+
+def test_memory_manager_weighted_signals(tmp_path):
+    log_file = tmp_path / ".chillvibe_logs.jsonl"
+    entries = [
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Weak match", "signals": ["TIMEOUT"]},
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Strong match", "signals": ["TEST_FAILURE", "SYNTAX_ERROR"]},
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Medium match", "signals": ["COMMAND_NOT_FOUND"]},
+    ]
+    
+    with open(log_file, "w") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+            
+    memory = MemoryManager(log_path=str(log_file))
+    
+    # Searching for signals that should favor "Strong match"
+    failures = memory.get_similar_failures("LOGIC", signals=["TEST_FAILURE", "TIMEOUT"])
+    
+    # "Strong match" has TEST_FAILURE (weight 5) -> score 5
+    # "Weak match" has TIMEOUT (weight 1) -> score 1
+    # "Medium match" has nothing -> score 0
+    
+    assert failures[0]["lessons_learned"] == "Strong match"
+    assert failures[1]["lessons_learned"] == "Weak match"
+    assert failures[2]["lessons_learned"] == "Medium match"
+    
+    # Test SYNTAX_ERROR weighting
+    failures2 = memory.get_similar_failures("LOGIC", signals=["SYNTAX_ERROR", "COMMAND_NOT_FOUND"])
+    # "Strong match" has SYNTAX_ERROR (5) -> 5
+    # "Medium match" has COMMAND_NOT_FOUND (2) -> 2
+    # "Weak match" -> 0
+    assert failures2[0]["lessons_learned"] == "Strong match"
+    assert failures2[1]["lessons_learned"] == "Medium match"
+

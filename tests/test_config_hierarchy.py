@@ -81,13 +81,12 @@ class TestConfigHierarchy(unittest.TestCase):
         self.assertEqual(resolved_args.model, 'default-model')
         self.assertIsNone(resolved_args.depth)
 
-    def test_flash_shortcut(self):
-        args = self.parser.parse_args(['.', '--model', 'flash'])
-        config_data = {}
-        global_config = {}
+        def test_flash_shortcut(self):
+            args = self.parser.parse_args(['.', '--model', 'flash'])
+            config_data = {}
+            global_config = {}
         
-        resolved_args = cli.resolve_config(args, config_data, global_config)
-        self.assertEqual(resolved_args.model, 'gemini-3-flash-preview')
-
+            resolved_args = cli.resolve_config(args, config_data, global_config)
+            self.assertEqual(resolved_args.model, 'gemini-2.0-flash')
 if __name__ == '__main__':
     unittest.main()

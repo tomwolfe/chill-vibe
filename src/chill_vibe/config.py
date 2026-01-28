@@ -27,7 +27,7 @@ DEFAULT_AGENTS = {
     }
 }
 
-VALID_CONFIG_KEYS = {"agents", "extra_args", "model", "thinking_level", "exclude_patterns", "depth", "include_ext", "protected_files"}
+VALID_CONFIG_KEYS = {"agents", "extra_args", "model", "thinking_level", "exclude_patterns", "depth", "include_ext", "protected_files", "max_cost"}
 
 def load_config(repo_path):
     """Load project configuration from .chillvibe.json or .chillvibe.yaml/.yml."""
@@ -55,39 +55,45 @@ def get_agent_registry(repo_path=None):
     # Start with default agents
     registry = {name: CodingAgent(name, **cfg) for name, cfg in DEFAULT_AGENTS.items()}
     
+    def merge_agents(data, target_registry):
+        if not isinstance(data, dict):
+            return
+            
+        agents_data = data.get("agents")
+        if agents_data is None:
+            # Heuristic: if it looks like a flat dict of agent configs
+            is_flat_agents = any(isinstance(v, dict) and "command" in v for v in data.values())
+            if is_flat_agents:
+                agents_data = data
+
+        if isinstance(agents_data, dict):
+            for name, cfg in agents_data.items():
+                if isinstance(cfg, dict) and "command" in cfg:
+                    # Map 'deps' to 'dependencies' if present
+                    if "deps" in cfg and "dependencies" not in cfg:
+                        cfg["dependencies"] = cfg.pop("deps")
+                    
+                    # Create or update agent
+                    # We extract only the keys CodingAgent.__init__ expects
+                    valid_keys = {"command", "dependencies", "env"}
+                    agent_args = {k: v for k, v in cfg.items() if k in valid_keys}
+                    target_registry[name] = CodingAgent(name, **agent_args)
+
     # 1. Load global config: ~/.chillvibe/agents.yaml
     global_config_path = Path.home() / ".chillvibe" / "agents.yaml"
     if global_config_path.exists():
         try:
             with open(global_config_path, "r") as f:
                 global_data = yaml.safe_load(f)
-                if isinstance(global_data, dict):
-                    # If there's an 'agents' key, use it. Otherwise, if it's a flat dict of agents, use that.
-                    # We check if any of the keys match DEFAULT_AGENTS or have a 'command' key to guess.
-                    agents_data = global_data.get("agents")
-                    if agents_data is None:
-                        # Heuristic: if it looks like a flat dict of agent configs
-                        is_flat_agents = any(isinstance(v, dict) and "command" in v for v in global_data.values())
-                        if is_flat_agents:
-                            agents_data = global_data
-
-                    if isinstance(agents_data, dict):
-                        for name, cfg in agents_data.items():
-                            if isinstance(cfg, dict) and "command" in cfg:
-                                # This completely overrides the default agent if name matches
-                                registry[name] = CodingAgent(name, **cfg)
+                merge_agents(global_data, registry)
         except Exception as e:
             print(f"[!] Warning: Could not parse global agent config: {e}")
 
     # 2. Load local config: .chillvibe.yaml (under 'agents' key)
     if repo_path:
         local_config = load_config(repo_path)
-        if isinstance(local_config, dict) and "agents" in local_config:
-            local_agents = local_config["agents"]
-            if isinstance(local_agents, dict):
-                for name, cfg in local_agents.items():
-                    if isinstance(cfg, dict) and "command" in cfg:
-                        registry[name] = CodingAgent(name, **cfg)
+        if isinstance(local_config, dict):
+            merge_agents(local_config, registry)
                     
     return registry
 

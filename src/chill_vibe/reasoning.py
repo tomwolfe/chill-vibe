@@ -15,7 +15,7 @@ except ImportError:
     genai = None
     types = None
 
-def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None, lessons_learned=None, signals=None):
+def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None, lessons_learned=None, signals=None, budget_report=None):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
@@ -33,6 +33,12 @@ def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_
         "agent_prompt": mission.agent_prompt if hasattr(mission, 'agent_prompt') else str(mission),
         "objectives": mission.objectives if hasattr(mission, 'objectives') else []
     }
+    if budget_report:
+        log_entry.update(budget_report)
+        # mission contract specifically asked for 'total_tokens' in logs
+        if "total_tokens" not in log_entry:
+            log_entry["total_tokens"] = budget_report.get("total_tokens", 0)
+
     try:
         with open(log_file, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
@@ -46,7 +52,7 @@ def show_history():
         print("No history found.")
         return
 
-    print(f"{ 'Timestamp':<20} | { 'Model':<25} | { 'Agent':<15} | { 'Status':<10} | { 'Class':<12} | { 'Exit':<5}")
+    print(f"{ 'Timestamp':<20} | { 'Model':<25} | { 'Agent':<15} | { 'Status':<10} | { 'Tokens':<8}")
     print("-" * 105)
     
     try:
@@ -58,15 +64,14 @@ def show_history():
                     model = entry.get("model_id", "N/A")
                     agent = entry.get("agent_name", "N/A")
                     status = entry.get("status", "N/A")
-                    classification = entry.get("classification") or ""
-                    exit_code = entry.get("exit_code", "N/A")
-                    print(f"{timestamp:<20} | {model:<25} | {agent:<15} | {status:<10} | {classification:<12} | {exit_code:<5}")
+                    tokens = entry.get("total_tokens", 0)
+                    print(f"{timestamp:<20} | {model:<25} | {agent:<15} | {status:<10} | {tokens:<8}")
                 except json.JSONDecodeError:
                     continue
     except Exception as e:
         print(f"Error reading history: {e}")
 
-def validate_mission(mission_contract, codebase_context, model_id, config_data=None):
+def validate_mission(mission_contract, codebase_context, model_id, config_data=None, budget_tracker=None):
     """Second-pass validation of the mission contract."""
     if genai is None:
         return True, ""
@@ -101,6 +106,9 @@ def validate_mission(mission_contract, codebase_context, model_id, config_data=N
             model=model_id,
             contents=prompt
         )
+        if budget_tracker:
+            budget_tracker.update_from_response(response)
+
         result = response.text.strip()
         if result.startswith("PASSED"):
             return True, ""
@@ -110,7 +118,7 @@ def validate_mission(mission_contract, codebase_context, model_id, config_data=N
         print(f"[!] Warning: Mission validation failed to run: {e}")
         return True, "" # Fallback to true if validation fails to execute
 
-def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, config_data=None, verbose=False):
+def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, config_data=None, verbose=False, budget_tracker=None):
     """Phase B: Strategic Reasoning"""
     if not os.path.exists(context_file):
         print(f"Error: {context_file} not found.")
@@ -163,13 +171,13 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
     
     budgets = DEFAULT_CONFIG["budgets"]
-    budget = budgets.get(thinking_level.upper(), budgets["HIGH"])
+    thinking_budget = budgets.get(thinking_level.upper(), budgets["HIGH"])
 
     # Update config with thinking budget
     config = types.GenerateContentConfig(
         thinking_config=types.ThinkingConfig(
             include_thoughts=True,
-            thinking_budget=budget
+            thinking_budget=thinking_budget
         )
     )
     
@@ -184,6 +192,8 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
                 contents=full_prompt,
                 config=config
             )
+            if budget_tracker:
+                budget_tracker.update_from_response(response)
             break
         except Exception as e:
             error_str = str(e).lower()
@@ -256,7 +266,7 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
 
     # Perform second-pass validation
     print("[*] Validating mission contract (second pass)...")
-    valid, validation_msg = validate_mission(mission, codebase_context, model_id, config_data)
+    valid, validation_msg = validate_mission(mission, codebase_context, model_id, config_data, budget_tracker=budget_tracker)
     if not valid:
         print(f"[!] Mission contract rejected by expert auditor:\n{validation_msg}")
         sys.exit(1)
@@ -291,7 +301,7 @@ def classify_failure_signals(exit_code, last_output):
             
     return signals
 
-def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, exit_code=None, config_data=None, verification_results=None):
+def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, exit_code=None, config_data=None, verification_results=None, budget_tracker=None):
     """Generate a recovery strategy after an agent fails, with grounded classification and memory."""
     if genai is None:
         print("Error: google-genai SDK not found.")
@@ -387,9 +397,11 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
             model=model_id,
             contents=prompt
         )
+        if budget_tracker:
+            budget_tracker.update_from_response(response)
     except Exception as e:
         print(f"Error calling Gemini API for recovery: {e}")
-        return None, "UNKNOWN", None
+        return None, "UNKNOWN", None, []
         
     full_text = response.text
     
@@ -403,3 +415,4 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     recovery_prompt = agent_prompt_match.group(1).strip() if agent_prompt_match else full_text
     
     return recovery_prompt, classification, lessons_learned, signals
+

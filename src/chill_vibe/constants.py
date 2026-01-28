@@ -21,12 +21,13 @@
 # SOFTWARE.
 
 DEFAULT_CONFIG = {
-    "model": "gemini-3-flash-preview",
+    "model": "gemini-2.0-flash",
     "thinking_level": "HIGH",
     "budgets": {
         "LOW": 2048,
         "MEDIUM": 8192,
         "HIGH": 16384
     },
-    "max_retries": 2
+    "max_retries": 2,
+    "max_cost": 1.0 # Default $1.00 budget per mission
 }

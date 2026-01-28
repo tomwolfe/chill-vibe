@@ -14,20 +14,33 @@ class MemoryManager:
             
         signals = set(signals or [])
         failures = []
+        
+        # Define signal weights
+        SIGNAL_WEIGHTS = {
+            "TEST_FAILURE": 5,
+            "SYNTAX_ERROR": 5,
+            "COMMAND_NOT_FOUND": 2,
+            "DEPENDENCY_MISSING": 2,
+            "PERMISSION_DENIED": 2,
+            "TIMEOUT": 1
+        }
+
         try:
             with open(self.log_path, "r") as f:
                 for line in f:
                     try:
                         entry = json.loads(line)
-                        if (entry.get("status") == "FAILED" and 
+                        if (entry.get("status") in ["FAILED", "OVER_BUDGET"] and 
                             entry.get("classification") == classification):
                             
-                            # Calculate relevance score based on signal matching
-                            entry_signals = set(entry.get("signals") or [])
+                            # Calculate relevance score based on weighted signal matching
+                            entry_signals = entry.get("signals") or []
                             score = 0
                             if signals:
-                                match_count = len(signals.intersection(entry_signals))
-                                score = match_count
+                                # Count matches with weights
+                                for s in signals:
+                                    if s in entry_signals:
+                                        score += SIGNAL_WEIGHTS.get(s, 1)
                             
                             entry["relevance_score"] = score
                             failures.append(entry)
