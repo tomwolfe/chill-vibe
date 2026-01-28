@@ -31,7 +31,10 @@ def run_doctor(registry):
     # 1. Check GEMINI_API_KEY
     api_key = os.environ.get("GEMINI_API_KEY")
     if api_key:
-        print(f"[✓] GEMINI_API_KEY: Set ({api_key[:4]}...{api_key[-4:]})")
+        if api_key.startswith("AIza"):
+            print(f"[✓] GEMINI_API_KEY: Set and valid format ({api_key[:4]}...{api_key[-4:]})")
+        else:
+            print(f"[✗] GEMINI_API_KEY: Set but invalid format (should start with 'AIza')")
     else:
         print("[✗] GEMINI_API_KEY: Not set (Phase B reasoning will fail)")
 
@@ -52,9 +55,20 @@ def run_doctor(registry):
         if input("[?] Would you like to attempt to install google-genai? (y/n): ").lower() == 'y':
             install_package("google-genai")
 
-    # 2b. Check npx
+    # 2b. Check Node.js and NPM
     if shutil.which("npx"):
         print("[✓] npx: Installed")
+        try:
+            node_v = subprocess.check_output(["node", "--version"], text=True).strip()
+            print(f"[✓] node: Installed ({node_v})")
+        except Exception:
+            print("[✗] node: Not found")
+            
+        try:
+            npm_v = subprocess.check_output(["npm", "--version"], text=True).strip()
+            print(f"[✓] npm: Installed ({npm_v})")
+        except Exception:
+            print("[✗] npm: Not found")
     else:
         print("[✗] npx: Not installed (Required for gemini-cli agent)")
 

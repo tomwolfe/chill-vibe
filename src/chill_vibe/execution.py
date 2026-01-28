@@ -25,6 +25,7 @@ def raw_mode(file):
 
 def forward_stdin(process):
     """Thread function to forward system stdin to the subprocess stdin."""
+    log_file = os.path.join(os.getcwd(), ".chillvibe_debug.log")
     try:
         with raw_mode(sys.stdin):
             while True:
@@ -35,13 +36,14 @@ def forward_stdin(process):
                     process.stdin.write(char)
                     process.stdin.flush()
                 except (EOFError, BrokenPipeError):
+                    # These are common when the process ends
                     break
     except Exception as e:
-        # Silently fail if we can't write to log, but try to log significant errors
         try:
-            log_file = os.path.join(os.getcwd(), ".chillvibe_debug.log")
             with open(log_file, "a") as f:
-                f.write(f"forward_stdin error: {e}\n")
+                import time
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"[{timestamp}] forward_stdin unexpected error: {e}\n")
         except:
             pass
     finally:

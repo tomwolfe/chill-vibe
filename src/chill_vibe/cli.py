@@ -3,22 +3,20 @@ import os
 import sys
 import time
 from . import __version__
-from .config import get_agent_registry, load_config, get_default_model
+from .config import get_agent_registry, load_config, get_global_config
+from .constants import DEFAULT_MODEL
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, get_recovery_strategy
 from .execution import run_coding_agent
 
 def get_parser(registry):
-    default_model = get_default_model()
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
     parser.add_argument("path", nargs="?", help="The directory of the repo to analyze")
     parser.add_argument("--agent", default="gemini-cli", 
                         help=f"Choice of coding agent (default: gemini-cli). Available: {', '.join(registry.keys())}")
-    parser.add_argument("--thinking", default="HIGH", 
-                        help="Thinking level (default: HIGH)")
-    parser.add_argument("--model", default=default_model, 
-                        help=f"Model ID (default: {default_model})")
+    parser.add_argument("--thinking", help="Thinking level (e.g., LOW, MEDIUM, HIGH)")
+    parser.add_argument("--model", help="Model ID")
     parser.add_argument("--dry-run", action="store_true", 
                         help="Output the context and the reasoning prompt without invoking the coding agent")
     parser.add_argument("--verbose", "-v", action="store_true",
@@ -38,6 +36,25 @@ def get_parser(registry):
                         help="Show mission history")
     parser.add_argument("--version", action="version", version=f"chill-vibe v{__version__}")
     return parser
+
+def resolve_config(args, config_data, global_config):
+    """Resolve configuration hierarchy: CLI > Local > Global > Defaults."""
+    # Resolve Thinking Level: CLI > Local > Global > Default
+    if args.thinking is None:
+        args.thinking = config_data.get("thinking_level") or global_config.get("thinking_level") or "HIGH"
+
+    # Resolve Model: CLI > Local > Global > Default
+    if args.model is None:
+        args.model = config_data.get("model") or global_config.get("model") or global_config.get("default_model") or DEFAULT_MODEL
+    
+    if args.model == "flash":
+        args.model = "gemini-3-flash-preview"
+
+    # Resolve Depth: CLI > Local > Global > Default
+    if args.depth is None:
+        args.depth = config_data.get("depth") or global_config.get("depth")
+    
+    return args
 
 def main():
     # Load registry (pass None initially to get defaults and global)
@@ -66,16 +83,17 @@ def main():
     
     # Load project config
     config_data = load_config(args.path)
+    global_config = get_global_config()
     
+    # Resolve configuration hierarchy
+    args = resolve_config(args, config_data, global_config)
+
     # Phase A: Context Extraction
     exclude_patterns = config_data.get("exclude_patterns", [])
     if args.exclude:
         exclude_patterns.extend([p.strip() for p in args.exclude.split(",")])
     
     run_git_dump(args.path, args.context_file, exclude_patterns, args.depth, args.include_ext)
-    
-    if args.model == "flash":
-        args.model = "gemini-3-flash-preview"
 
     try:
         if args.dry_run:

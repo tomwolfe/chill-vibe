@@ -4,6 +4,7 @@ import time
 import json
 import sys
 from pathlib import Path
+from .constants import BUDGETS
 
 try:
     from google import genai
@@ -96,12 +97,7 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
     
-    budgets = {
-        "LOW": 2048,
-        "MEDIUM": 8192,
-        "HIGH": 16384
-    }
-    budget = budgets.get(thinking_level.upper(), 16384)
+    budget = BUDGETS.get(thinking_level.upper(), BUDGETS["HIGH"])
 
     # Update config with thinking budget
     config = types.GenerateContentConfig(
