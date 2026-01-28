@@ -29,10 +29,9 @@ Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subp
    cd chill-vibe
    ```
 
-2. **Run the setup script:**
-   This will install required Python packages (`google-genai`, `pathspec`) and set permissions.
+2. **Install the package:**
    ```bash
-   ./setup.sh
+   pip install .
    ```
 
 3. **Configure your API Key:**
@@ -43,22 +42,24 @@ Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subp
 ## 📖 Usage
 
 ```bash
-./chill-vibe.py [path_to_repo] [options]
+chill-vibe [path_to_repo] [options]
 ```
 
 ### Arguments:
 - `path`: The directory of the repository you want to analyze and modify.
-- `--agent`: Choice of coding agent: `gemini-cli` (default) or `qwen`.
+- `--agent`: Choice of coding agent: `gemini-cli` (default), `aider`, or `qwen`.
 - `--thinking`: Thinking level for Gemini reasoning: `HIGH` (default), `MEDIUM`, or `LOW`.
 - `--model`: The Gemini model ID (default: `gemini-3-flash-preview`).
 - `--dry-run`: Extracts context and generates the strategic prompt without launching the coding agent.
 - `--context-file`: The file to store the extracted codebase context (default: `codebase_context.txt`).
 - `--cleanup`: Delete the context file after execution.
+- `--history`: Show mission history from `.chillvibe_logs.jsonl`.
+- `--doctor`: Run a diagnostic check on the environment and agents.
 - `--version`: Show the program's version number and exit.
 
 ### Example:
 ```bash
-./chill-vibe.py . --dry-run --cleanup --context-file temp_context.txt
+chill-vibe . --dry-run --cleanup
 ```
 
 ## ⚙️ Configuration

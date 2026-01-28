@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chill-vibe"
+version = "0.1.0"
+authors = [
+  { name="Tom Wolfe" },
+]
+description = "A Reasoning-to-Code CLI pipeline"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "google-genai",
+    "pyyaml",
+    "git-dump @ git+https://github.com/tomwolfe/git_dump.git"
+]
+
+[project.scripts]
+chill-vibe = "chill_vibe.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

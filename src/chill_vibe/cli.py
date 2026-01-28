@@ -1,0 +1,101 @@
+import argparse
+import os
+import sys
+import time
+from .config import get_agent_registry, load_config
+from .doctor import run_doctor, validate_environment
+from .context import run_git_dump
+from .reasoning import get_strategic_reasoning, log_mission, show_history
+from .execution import run_coding_agent
+
+def get_parser(registry):
+    parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
+    parser.add_argument("path", nargs="?", help="The directory of the repo to analyze")
+    parser.add_argument("--agent", default="gemini-cli", 
+                        help=f"Choice of coding agent (default: gemini-cli). Available: {', '.join(registry.keys())}")
+    parser.add_argument("--thinking", default="HIGH", 
+                        help="Thinking level (default: HIGH)")
+    parser.add_argument("--model", default="gemini-3-flash-preview", 
+                        help="Model ID (default: gemini-3-flash-preview)")
+    parser.add_argument("--dry-run", action="store_true", 
+                        help="Output the context and the reasoning prompt without invoking the coding agent")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Print the model's internal thinking/reasoning")
+    parser.add_argument("--context-file", default="codebase_context.txt",
+                        help="The file to store the extracted codebase context (default: codebase_context.txt)")
+    parser.add_argument("--cleanup", action="store_true",
+                        help="Delete the context file after execution")
+    parser.add_argument("--depth", type=int, help="Limit how deep the context extraction crawls")
+    parser.add_argument("--include-ext", help="Filter extraction to specific file extensions (e.g., py,md)")
+    parser.add_argument("--doctor", action="store_true",
+                        help="Run a diagnostic check on the environment and agents")
+    parser.add_argument("--history", action="store_true",
+                        help="Show mission history")
+    parser.add_argument("--version", action="version", version="chill-vibe v0.1.0")
+    return parser
+
+def main():
+    # Load registry (pass None initially to get defaults and global)
+    registry = get_agent_registry()
+    
+    parser = get_parser(registry)
+    args = parser.parse_args()
+
+    if args.history:
+        show_history()
+        sys.exit(0)
+
+    if args.doctor:
+        run_doctor(registry)
+        sys.exit(0)
+
+    if not args.path:
+        parser.print_help()
+        sys.exit(0)
+    
+    # Reload registry with local path if available
+    registry = get_agent_registry(args.path)
+    
+    # Pre-flight checks
+    validate_environment(args.agent, registry)
+    
+    # Load project config
+    config_data = load_config(args.path)
+    
+    # Phase A: Context Extraction
+    exclude_patterns = config_data.get("exclude_patterns", [])
+    run_git_dump(args.path, args.context_file, exclude_patterns, args.depth, args.include_ext)
+    
+    if args.model == "flash":
+        args.model = "gemini-3-flash-preview"
+
+    try:
+        if args.dry_run:
+            print("\n[*] Dry-run mode: Context extracted.")
+        
+        # Phase B: Strategic Reasoning
+        start_time = time.time()
+        agent_prompt = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
+        duration = time.time() - start_time
+        
+        if args.dry_run:
+            log_mission(agent_prompt, args.model, args.agent, duration, status="DRY_RUN")
+            print("\n--- GENERATED AGENT PROMPT ---")
+            print(agent_prompt)
+            print("------------------------------")
+        else:
+            # Phase C: Autonomous Execution
+            exit_code = run_coding_agent(args.agent, agent_prompt, registry, config_data)
+            
+            status = "COMPLETED" if exit_code == 0 else "FAILED"
+            if exit_code == 130:
+                status = "INTERRUPTED"
+                
+            log_mission(agent_prompt, args.model, args.agent, duration, status=status)
+    finally:
+        if args.cleanup and os.path.exists(args.context_file):
+            print(f"[*] Cleaning up context file: {args.context_file}")
+            os.remove(args.context_file)
+
+if __name__ == "__main__":
+    main()
