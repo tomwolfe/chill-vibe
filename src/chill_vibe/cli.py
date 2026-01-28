@@ -153,35 +153,51 @@ def main():
             # Structured Recovery Loop
             classification = None
             if exit_code != 0 and exit_code != 130 and args.retry:
-                print(f"\n[!] Mission failed (exit code {exit_code}). Entering structured recovery...")
+                max_retries = config_data.get("max_retries") or global_config.get("max_retries") or DEFAULT_CONFIG.get("max_retries", 1)
+                retry_count = 0
+                last_classification = None
                 
-                # Classify and recover
-                agent = registry[args.agent]
-                failure_output = "".join(list(agent.last_output))
-                recovery_prompt, classification = get_recovery_strategy(
-                    args.path, 
-                    args.model, 
-                    mission.agent_prompt, 
-                    failure_output, 
-                    exit_code=exit_code,
-                    config_data=config_data
-                )
-                
-                print(f"[*] Failure classification: {classification}")
-                
-                if recovery_prompt:
-                    print(f"[*] Applying recovery strategy (Category: {classification})...")
-                    exit_code = run_coding_agent(args.agent, recovery_prompt, registry, config_data)
-                    # For logging purposes, we could create a temporary mission object or just update the prompt
-                    mission.agent_prompt = recovery_prompt 
+                while retry_count < max_retries and exit_code != 0 and exit_code != 130:
+                    retry_count += 1
+                    print(f"\n[!] Mission failed (exit code {exit_code}). Entering structured recovery (Attempt {retry_count}/{max_retries})...")
                     
-                    # Verify again after recovery
-                    if exit_code == 0:
-                        success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline)
-                        if not success_passed:
-                            exit_code = 1
-                else:
-                    print("[!] Failed to generate recovery strategy.")
+                    # Classify and recover
+                    agent = registry[args.agent]
+                    failure_output = "".join(list(agent.last_output))
+                    recovery_prompt, classification = get_recovery_strategy(
+                        args.path, 
+                        args.model, 
+                        mission.agent_prompt, 
+                        failure_output, 
+                        exit_code=exit_code,
+                        config_data=config_data
+                    )
+                    
+                    print(f"[*] Failure classification: {classification}")
+                    
+                    # Stop if we are stuck in the same failure mode
+                    if classification == last_classification and classification is not None:
+                        print(f"[!] Detected repeated failure mode ({classification}). Stopping recovery to avoid loop.")
+                        break
+                    
+                    last_classification = classification
+                    
+                    if recovery_prompt:
+                        print(f"[*] Applying recovery strategy (Category: {classification})...")
+                        exit_code = run_coding_agent(args.agent, recovery_prompt, registry, config_data)
+                        
+                        # Update mission prompt for logging (only if it succeeds or it's the last attempt)
+                        mission.agent_prompt = recovery_prompt 
+                        
+                        # Verify again after recovery
+                        if exit_code == 0:
+                            success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline)
+                            if not success_passed:
+                                print("[!] Recovery attempt finished with exit code 0, but success criteria failed.")
+                                exit_code = 1
+                    else:
+                        print("[!] Failed to generate recovery strategy.")
+                        break
 
             status = "COMPLETED" if exit_code == 0 else "FAILED"
             if exit_code == 130:

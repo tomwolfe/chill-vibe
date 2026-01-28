@@ -236,6 +236,13 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
             forbidden_actions=mission_data.get("forbidden_actions", []),
             summary=mission_data.get("summary", "")
         )
+        
+        # Internal validation
+        is_valid, error_msg = mission.validate()
+        if not is_valid:
+            print(f"[!] Error: Mission contract validation failed: {error_msg}")
+            sys.exit(1)
+            
     except Exception as e:
         print(f"[!] Error parsing mission contract JSON: {e}")
         # Print the raw text for debugging if JSON parsing fails
@@ -248,9 +255,8 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     print("[*] Validating mission contract (second pass)...")
     valid, validation_msg = validate_mission(mission, codebase_context, model_id, config_data)
     if not valid:
-        print(f"[!] Mission contract rejected by validator:\n{validation_msg}")
-        # In a real scenario, we might want to re-try or fail. 
-        # For now, let's just warn and continue if it's not catastrophic.
+        print(f"[!] Mission contract rejected by expert auditor:\n{validation_msg}")
+        sys.exit(1)
     
     return mission
 

@@ -71,14 +71,14 @@ Launches a coding agent (`gemini-cli`, `qwen`, `aider`, etc.) as a subprocess.
 
 After execution:
 
-1. **Success Verification**: Criteria are run automatically. Supports:
+1. **Success Verification**: Criteria are run automatically and results are normalized into structured, machine-readable forms. Supports:
    * `pytest` & `ruff`: Semantic and linting checks.
    * `no_new_files`: Invariant enforcement.
    * `exists: <path>`: File/directory existence.
    * `contains: <path> <regex>`: Content validation.
 2. **Change Summarization**: Generates a human-readable summary of all filesystem changes using `git diff`.
 3. **Classification & Memory**: If checks fail, the failure is classified (LOGIC, TOOLING, etc.).
-4. **Targeted Recovery**: A recovery strategy is generated, incorporating **historical failure memory** from past missions to prevent repetitive errors.
+4. **Targeted Bounded Recovery**: A recovery strategy is generated, incorporating **historical failure memory**. The loop is explicitly bounded to prevent unproductive retries or repeated failure modes.
 
 This loop converts retries from blind restarts into informed adaptation.
 

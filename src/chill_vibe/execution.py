@@ -174,17 +174,21 @@ def verify_success(success_criteria, repo_path, file_baseline=None):
     
     for criterion in success_criteria:
         print(f"[*] Running check: {criterion}")
+        result = {
+            "criterion": criterion,
+            "passed": False,
+            "message": "",
+            "details": {}
+        }
         try:
             if criterion.startswith("exists:"):
                 # Check if file/dir exists
                 path_str = criterion[len("exists:"):].strip()
                 target_path = Path(repo_path) / path_str
                 passed = target_path.exists()
-                results.append({
-                    "command": criterion,
-                    "passed": passed,
-                    "info": f"Path {path_str} exists: {passed}"
-                })
+                result["passed"] = passed
+                result["message"] = f"Path {path_str} exists: {passed}"
+                
             elif criterion.startswith("contains:") or criterion.startswith("not_contains:"):
                 # Check if file contains/doesn't contain regex
                 is_negative = criterion.startswith("not_contains:")
@@ -198,7 +202,7 @@ def verify_success(success_criteria, repo_path, file_baseline=None):
                 
                 if not file_path.exists():
                     passed = False
-                    info = f"File {file_path_str} does not exist"
+                    message = f"File {file_path_str} does not exist"
                 else:
                     with open(file_path, 'r') as f:
                         content = f.read()
@@ -206,57 +210,56 @@ def verify_success(success_criteria, repo_path, file_baseline=None):
                         match = re.search(regex_pattern, content, re.MULTILINE | re.DOTALL)
                         if is_negative:
                             passed = not match
-                            info = f"Pattern '{regex_pattern}' not found in {file_path_str}" if passed else f"Pattern '{regex_pattern}' found in {file_path_str}"
+                            message = f"Pattern '{regex_pattern}' not found in {file_path_str}" if passed else f"Pattern '{regex_pattern}' found in {file_path_str}"
                         else:
                             passed = bool(match)
-                            info = f"Pattern '{regex_pattern}' found in {file_path_str}" if passed else f"Pattern '{regex_pattern}' not found in {file_path_str}"
+                            message = f"Pattern '{regex_pattern}' found in {file_path_str}" if passed else f"Pattern '{regex_pattern}' not found in {file_path_str}"
                 
-                results.append({
-                    "command": criterion,
-                    "passed": passed,
-                    "info": info
-                })
+                result["passed"] = passed
+                result["message"] = message
+                result["details"] = {"file": file_path_str, "pattern": regex_pattern}
+
             elif criterion == "no_new_files":
                 if file_baseline is None:
                     passed = True
-                    info = "No file baseline provided for comparison"
+                    message = "No file baseline provided for comparison"
                 else:
                     current_files = get_file_baseline(repo_path)
                     new_files = current_files - file_baseline
                     passed = len(new_files) == 0
-                    info = f"New files detected: {', '.join(new_files)}" if not passed else "No new files detected"
+                    message = f"New files detected: {', '.join(new_files)}" if not passed else "No new files detected"
                 
-                results.append({
-                    "command": criterion,
-                    "passed": passed,
-                    "info": info
-                })
+                result["passed"] = passed
+                result["message"] = message
+                result["details"] = {"new_files": list(new_files) if file_baseline is not None else []}
+
             elif criterion.startswith("pytest"):
                 # Run pytest
                 args = criterion[len("pytest"):].strip()
                 cmd = f"pytest {args}" if args else "pytest"
                 process = subprocess.run(cmd, shell=True, cwd=repo_path, capture_output=True, text=True)
                 passed = (process.returncode == 0)
-                results.append({
-                    "command": criterion,
-                    "passed": passed,
+                result["passed"] = passed
+                result["message"] = f"Pytest exited with code {process.returncode}"
+                result["details"] = {
                     "stdout": process.stdout,
                     "stderr": process.stderr,
                     "exit_code": process.returncode
-                })
+                }
+
             elif criterion.startswith("ruff"):
                 # Run ruff
                 args = criterion[len("ruff"):].strip()
                 cmd = f"ruff check {args}" if args else "ruff check ."
                 process = subprocess.run(cmd, shell=True, cwd=repo_path, capture_output=True, text=True)
                 passed = (process.returncode == 0)
-                results.append({
-                    "command": criterion,
-                    "passed": passed,
+                result["passed"] = passed
+                result["message"] = f"Ruff exited with code {process.returncode}"
+                result["details"] = {
                     "stdout": process.stdout,
                     "stderr": process.stderr,
                     "exit_code": process.returncode
-                })
+                }
             else:
                 # Default to shell command
                 process = subprocess.run(
@@ -267,27 +270,29 @@ def verify_success(success_criteria, repo_path, file_baseline=None):
                     text=True
                 )
                 passed = (process.returncode == 0)
-                results.append({
-                    "command": criterion,
-                    "passed": passed,
+                result["passed"] = passed
+                result["message"] = f"Command exited with code {process.returncode}"
+                result["details"] = {
                     "stdout": process.stdout,
                     "stderr": process.stderr,
                     "exit_code": process.returncode
-                })
+                }
             
-            if passed:
+            if result["passed"]:
                 print(f"    [✓] Passed")
             else:
                 print(f"    [✗] Failed")
                 all_passed = False
+            results.append(result)
+
         except Exception as e:
             print(f"    [!] Error running check: {e}")
-            results.append({
-                "command": criterion,
-                "passed": False,
-                "error": str(e)
-            })
+            result["passed"] = False
+            result["message"] = f"Error: {str(e)}"
+            results.append(result)
             all_passed = False
+            
+    return all_passed, results
             
     return all_passed, results
 

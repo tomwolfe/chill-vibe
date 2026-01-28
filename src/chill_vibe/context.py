@@ -46,12 +46,29 @@ class MissionContract:
 
     def validate(self):
         """Validate that the mission contract is complete and testable."""
-        if not self.objectives:
-            return False, "Mission must have at least one objective."
-        if not self.success_criteria:
-            return False, "Mission must have at least one success criterion."
-        if not self.agent_prompt:
-            return False, "Mission must have an agent prompt."
+        if not isinstance(self.objectives, list) or not self.objectives:
+            return False, "Mission must have at least one objective as a list of strings."
+        
+        if not isinstance(self.success_criteria, list) or not self.success_criteria:
+            return False, "Mission must have at least one success criterion as a list of strings."
+        
+        if not isinstance(self.agent_prompt, str) or not self.agent_prompt.strip():
+            return False, "Mission must have a non-empty agent prompt."
+
+        # Validate success criteria formats
+        valid_prefixes = ["exists:", "contains:", "not_contains:", "pytest", "ruff", "no_new_files"]
+        for criterion in self.success_criteria:
+            if not isinstance(criterion, str):
+                return False, f"Success criterion must be a string: {criterion}"
+            
+            # Check if it's one of our known prefixes or just a shell command
+            # For shell commands, we don't have a strict format, but we can warn if they look like typos of prefixes
+            if ":" in criterion:
+                prefix = criterion.split(":", 1)[0] + ":"
+                if prefix not in valid_prefixes and not any(criterion.startswith(p) for p in valid_prefixes):
+                    # It might be a complex shell command, but if it starts with something like "exist:" (typo), we should catch it
+                    pass
+
         return True, ""
 
 def run_git_dump(repo_path, output_file, exclude_patterns=None, depth=None, include_ext=None):

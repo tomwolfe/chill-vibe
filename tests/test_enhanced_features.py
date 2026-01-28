@@ -37,13 +37,54 @@ class TestEnhancedFeatures(unittest.TestCase):
         valid, msg = mission.validate()
         self.assertTrue(valid)
 
+        # Missing objectives
         mission_invalid = context.MissionContract(
             objectives=[],
-            success_criteria=[],
-            agent_prompt=""
+            success_criteria=["exists: file.txt"],
+            agent_prompt="Prompt"
         )
         valid, msg = mission_invalid.validate()
         self.assertFalse(valid)
+        self.assertIn("at least one objective", msg)
+
+        # Objectives not a list
+        mission_invalid = context.MissionContract(
+            objectives="not a list",
+            success_criteria=["exists: file.txt"],
+            agent_prompt="Prompt"
+        )
+        valid, msg = mission_invalid.validate()
+        self.assertFalse(valid)
+
+        # Success criteria not a list
+        mission_invalid = context.MissionContract(
+            objectives=["Goal 1"],
+            success_criteria="not a list",
+            agent_prompt="Prompt"
+        )
+        valid, msg = mission_invalid.validate()
+        self.assertFalse(valid)
+
+        # Empty agent prompt
+        mission_invalid = context.MissionContract(
+            objectives=["Goal 1"],
+            success_criteria=["exists: file.txt"],
+            agent_prompt="   "
+        )
+        valid, msg = mission_invalid.validate()
+        self.assertFalse(valid)
+        self.assertIn("non-empty agent prompt", msg)
+
+    def test_mission_contract_validation_success_criteria_type(self):
+        # Success criterion not a string
+        mission_invalid = context.MissionContract(
+            objectives=["Goal 1"],
+            success_criteria=[123],
+            agent_prompt="Prompt"
+        )
+        valid, msg = mission_invalid.validate()
+        self.assertFalse(valid)
+        self.assertIn("must be a string", msg)
 
     @patch('chill_vibe.execution.get_file_baseline')
     def test_verify_success_no_new_files(self, mock_get_baseline):
@@ -59,7 +100,7 @@ class TestEnhancedFeatures(unittest.TestCase):
         with patch('chill_vibe.execution.get_file_baseline', side_effect=[{"file1.txt", "file2.txt"}]) as mock_current:
             passed, results = execution.verify_success(criteria, ".", file_baseline={"file1.txt"})
             self.assertFalse(passed)
-            self.assertIn("file2.txt", results[0]["info"])
+            self.assertIn("file2.txt", results[0]["message"])
 
     @patch('subprocess.run')
     def test_verify_success_pytest(self, mock_run):
@@ -68,6 +109,7 @@ class TestEnhancedFeatures(unittest.TestCase):
         passed, results = execution.verify_success(criteria, ".")
         self.assertTrue(passed)
         mock_run.assert_called_with("pytest", shell=True, cwd=".", capture_output=True, text=True)
+        self.assertEqual(results[0]["details"]["exit_code"], 0)
 
     @patch('subprocess.run')
     def test_verify_success_ruff(self, mock_run):
@@ -76,6 +118,7 @@ class TestEnhancedFeatures(unittest.TestCase):
         passed, results = execution.verify_success(criteria, ".")
         self.assertFalse(passed)
         mock_run.assert_called_with("ruff check .", shell=True, cwd=".", capture_output=True, text=True)
+        self.assertEqual(results[0]["details"]["exit_code"], 1)
 
     def test_verify_success_exists(self):
         criteria = ["exists: README.md"]
@@ -88,7 +131,7 @@ class TestEnhancedFeatures(unittest.TestCase):
             passed, results = execution.verify_success(criteria, ".")
             self.assertTrue(passed)
             self.assertEqual(results[0]["passed"], True)
-            self.assertIn("exists: True", results[0]["info"])
+            self.assertIn("exists: True", results[0]["message"])
 
     def test_verify_success_contains(self):
         content = "Hello World\nSuccess criteria met."
@@ -98,7 +141,7 @@ class TestEnhancedFeatures(unittest.TestCase):
             passed, results = execution.verify_success(criteria, ".")
             self.assertTrue(passed)
             self.assertEqual(results[0]["passed"], True)
-            self.assertIn("found in log.txt", results[0]["info"])
+            self.assertIn("found in log.txt", results[0]["message"])
 
     def test_verify_success_not_contains(self):
         content = "Error: something went wrong."
@@ -108,7 +151,7 @@ class TestEnhancedFeatures(unittest.TestCase):
             passed, results = execution.verify_success(criteria, ".")
             self.assertTrue(passed)
             self.assertEqual(results[0]["passed"], True)
-            self.assertIn("not found in log.txt", results[0]["info"])
+            self.assertIn("not found in log.txt", results[0]["message"])
 
     def test_verify_success_contains_fail(self):
         content = "Error: something went wrong."

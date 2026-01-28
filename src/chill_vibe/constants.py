@@ -27,5 +27,6 @@ DEFAULT_CONFIG = {
         "LOW": 2048,
         "MEDIUM": 8192,
         "HIGH": 16384
-    }
+    },
+    "max_retries": 2
 }
