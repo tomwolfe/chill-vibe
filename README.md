@@ -20,6 +20,7 @@ Most coding agents rely on:
 **chill-vibe replaces those failure points with explicit structure:**
 
 * **Machine-verifiable success criteria** (not vibes)
+* **Automatic State Rollback** (never start recovery from a corrupted state)
 * **Second-pass mission validation** (expert auditor pass)
 * **Structured JSON mission contracts** (zero ambiguity)
 * **Failure classification + memory-aware recovery**
@@ -73,12 +74,15 @@ After execution:
 
 1. **Success Verification**: Criteria are run automatically and results are normalized into structured, machine-readable forms. Supports:
    * `pytest` & `ruff`: Semantic and linting checks.
+   * `coverage: <min_percent>`: Enforces minimum test coverage.
+   * `eval: <python_snippet>`: Custom state verification via Python one-liners.
    * `no_new_files`: Invariant enforcement.
    * `exists: <path>`: File/directory existence.
    * `contains: <path> <regex>`: Content validation.
-2. **Change Summarization**: Generates a human-readable summary of all filesystem changes using `git diff`.
-3. **Classification & Memory**: If checks fail, the failure is classified (LOGIC, TOOLING, etc.).
-4. **Targeted Bounded Recovery**: A recovery strategy is generated, incorporating **historical failure memory**. The loop is explicitly bounded to prevent unproductive retries or repeated failure modes.
+2. **Automatic State Rollback**: If verification fails and `--rollback` is enabled, the system automatically performs a `git reset --hard` to the pre-execution HEAD. This ensures the next recovery attempt starts from a clean slate rather than a "half-baked" or broken state.
+3. **Change Summarization**: Generates a human-readable summary of all filesystem changes using `git diff`.
+4. **Classification & Memory**: If checks fail, the failure is classified (LOGIC, TOOLING, etc.). The recovery engine generates a **"Lessons Learned"** summary that contrasts what was attempted against the specific verification failures.
+5. **Targeted Bounded Recovery**: A recovery strategy is generated, incorporating **historical failure memory** and the detailed verification results. The loop is explicitly bounded to prevent unproductive retries or repeated failure modes.
 
 This loop converts retries from blind restarts into informed adaptation.
 
@@ -122,6 +126,7 @@ chill-vibe [path_to_repo] [options]
 * `--model` – Gemini model for planning
 * `--dry-run` – Generate mission without executing
 * `--retry` – Enable structured recovery loop
+* `--rollback` – Enable automatic git rollback on verification failure
 * `--history` – View mission logs
 * `--doctor` – Environment diagnostics
 

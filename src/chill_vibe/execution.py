@@ -149,6 +149,44 @@ def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
         
     return agent.run(agent_prompt)
 
+def get_git_head(repo_path):
+    """Get the current git HEAD commit hash."""
+    try:
+        process = subprocess.run(
+            "git rev-parse HEAD",
+            shell=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True
+        )
+        if process.returncode == 0:
+            return process.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+def git_rollback(repo_path, commit_hash):
+    """Rollback the repository to a specific commit."""
+    if not commit_hash:
+        return False
+    
+    print(f"[*] Rolling back to commit {commit_hash}...")
+    try:
+        # Check for uncommitted changes and discard them
+        subprocess.run("git reset --hard", shell=True, cwd=repo_path, capture_output=True)
+        # Then reset to the specific commit if provided (though --hard usually enough if we just want to revert what agent did)
+        process = subprocess.run(
+            f"git reset --hard {commit_hash}",
+            shell=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True
+        )
+        return process.returncode == 0
+    except Exception as e:
+        print(f"[!] Rollback failed: {e}")
+        return False
+
 def get_file_baseline(repo_path):
     """Get a list of all files in the repository for comparison."""
     baseline = set()
@@ -247,6 +285,52 @@ def verify_success(success_criteria, repo_path, file_baseline=None):
                     "exit_code": process.returncode
                 }
 
+            elif criterion.startswith("eval:"):
+                # Run a python snippet to verify state
+                code = criterion[len("eval:"):].strip()
+                try:
+                    # Provide some useful context for the evaluation
+                    context = {
+                        "os": os,
+                        "sys": sys,
+                        "Path": Path,
+                        "repo_path": repo_path
+                    }
+                    passed = eval(code, {"__builtins__": __builtins__}, context)
+                    result["passed"] = bool(passed)
+                    result["message"] = f"Eval '{code}' returned {passed}"
+                except Exception as e:
+                    result["passed"] = False
+                    result["message"] = f"Eval error: {e}"
+
+            elif criterion.startswith("coverage:"):
+                # Ensure a minimum test coverage percentage
+                try:
+                    min_cov = float(criterion[len("coverage:"):].strip())
+                    # We run pytest-cov, assuming it's available or the user wants to check it
+                    cmd = "pytest --cov=. --cov-report=term-missing"
+                    process = subprocess.run(cmd, shell=True, cwd=repo_path, capture_output=True, text=True)
+                    
+                    # Parse the output for the TOTAL line
+                    output = process.stdout
+                    match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", output)
+                    if match:
+                        actual_cov = int(match.group(1))
+                        passed = actual_cov >= min_cov
+                        result["passed"] = passed
+                        result["message"] = f"Coverage {actual_cov}% (minimum {min_cov}%)"
+                        result["details"] = {"actual_coverage": actual_cov, "stdout": output}
+                    else:
+                        result["passed"] = False
+                        result["message"] = "Could not parse coverage percentage from pytest output"
+                        result["details"] = {"stdout": output}
+                except ValueError:
+                    result["passed"] = False
+                    result["message"] = f"Invalid coverage threshold: {criterion}"
+                except Exception as e:
+                    result["passed"] = False
+                    result["message"] = f"Coverage check error: {e}"
+
             elif criterion.startswith("ruff"):
                 # Run ruff
                 args = criterion[len("ruff"):].strip()
@@ -291,8 +375,6 @@ def verify_success(success_criteria, repo_path, file_baseline=None):
             result["message"] = f"Error: {str(e)}"
             results.append(result)
             all_passed = False
-            
-    return all_passed, results
             
     return all_passed, results
 

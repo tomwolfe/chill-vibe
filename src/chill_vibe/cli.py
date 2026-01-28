@@ -8,7 +8,7 @@ from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, get_recovery_strategy
-from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary
+from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary, get_git_head, git_rollback
 
 def get_parser(registry):
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
@@ -27,6 +27,8 @@ def get_parser(registry):
                         help="Delete the context file after execution")
     parser.add_argument("--retry", action="store_true",
                         help="If the agent fails, automatically request a recovery strategy and retry once")
+    parser.add_argument("--rollback", action="store_true",
+                        help="Enable automatic git rollback on verification failure")
     parser.add_argument("--depth", type=int, help="Limit how deep the context extraction crawls")
     parser.add_argument("--include-ext", help="Filter extraction to specific file extensions (e.g., py,md)")
     parser.add_argument("--exclude", help="Comma-separated list of glob patterns to ignore during context extraction")
@@ -137,6 +139,11 @@ def main():
         else:
             # Capture baseline before execution for 'no_new_files' check
             file_baseline = get_file_baseline(args.path)
+            
+            # Capture git HEAD before execution if rollback is enabled
+            initial_head = None
+            if args.rollback:
+                initial_head = get_git_head(args.path)
 
             # Phase C: Autonomous Execution
             exit_code = run_coding_agent(args.agent, mission.agent_prompt, registry, config_data)
@@ -149,6 +156,10 @@ def main():
                 if not success_passed:
                     print("[!] Agent finished with exit code 0, but success criteria failed.")
                     exit_code = 1 # Force failure if criteria not met
+            
+            # If failed and rollback is enabled, rollback before potential recovery
+            if exit_code != 0 and exit_code != 130 and args.rollback and initial_head:
+                git_rollback(args.path, initial_head)
 
             # Structured Recovery Loop
             classification = None
@@ -161,6 +172,10 @@ def main():
                     retry_count += 1
                     print(f"\n[!] Mission failed (exit code {exit_code}). Entering structured recovery (Attempt {retry_count}/{max_retries})...")
                     
+                    # Capture HEAD again for the next attempt if rollback is enabled
+                    if args.rollback:
+                        initial_head = get_git_head(args.path)
+
                     # Classify and recover
                     agent = registry[args.agent]
                     failure_output = "".join(list(agent.last_output))
@@ -170,7 +185,8 @@ def main():
                         mission.agent_prompt, 
                         failure_output, 
                         exit_code=exit_code,
-                        config_data=config_data
+                        config_data=config_data,
+                        verification_results=verification_results
                     )
                     
                     print(f"[*] Failure classification: {classification}")
@@ -195,6 +211,12 @@ def main():
                             if not success_passed:
                                 print("[!] Recovery attempt finished with exit code 0, but success criteria failed.")
                                 exit_code = 1
+                                
+                                if args.rollback and initial_head:
+                                    git_rollback(args.path, initial_head)
+                        elif args.rollback and initial_head:
+                            # Rollback if the recovery attempt itself failed
+                            git_rollback(args.path, initial_head)
                     else:
                         print("[!] Failed to generate recovery strategy.")
                         break

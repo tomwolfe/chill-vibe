@@ -288,7 +288,7 @@ def classify_failure_signals(exit_code, last_output):
             
     return signals
 
-def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, exit_code=None, config_data=None):
+def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, exit_code=None, config_data=None, verification_results=None):
     """Generate a recovery strategy after an agent fails, with grounded classification and memory."""
     if genai is None:
         print("Error: google-genai SDK not found.")
@@ -298,6 +298,14 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     
     signals = classify_failure_signals(exit_code, failure_output) if exit_code is not None else []
     signals_str = ", ".join(signals) if signals else "NONE"
+    
+    # Format verification results if available
+    verification_context = ""
+    if verification_results:
+        verification_context = "\n--- VERIFICATION RESULTS ---\n"
+        for res in verification_results:
+            status = "PASSED" if res.get("passed") else "FAILED"
+            verification_context += f"- [{status}] {res.get('criterion')}: {res.get('message')}\n"
     
     # Read history for memory
     history_context = ""
@@ -322,6 +330,11 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
                         history_context += f"  Classification: {entry.get('classification')}\n"
                         history_context += f"  Objectives: {', '.join(entry.get('objectives', []))}\n"
                         history_context += f"  Exit Code: {entry.get('exit_code')}\n"
+                        if entry.get("verification_results"):
+                            history_context += "  Failed Criteria:\n"
+                            for vr in entry.get("verification_results"):
+                                if not vr.get("passed"):
+                                    history_context += f"    - {vr.get('criterion')}\n"
         except Exception as e:
             print(f"[!] Warning: Could not read history for recovery: {e}")
 
@@ -337,15 +350,17 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
         "- ENVIRONMENT: Missing dependencies, environment variables, or infrastructure issues.\n"
         "- AMBIGUITY: Original instructions were unclear or contradictory.\n"
         "- UNKNOWN: Failure reason is not apparent from the output.\n\n"
+        f"{verification_context}\n"
         f"{history_context}\n"
         "--- ORIGINAL PROMPT ---\n"
         f"{original_prompt}\n\n"
         "--- FAILED OUTPUT (LAST 50 LINES) ---\n"
         f"{failure_output}\n\n"
         "--- INSTRUCTIONS ---\n"
-        "1. Provide your analysis and classification first, incorporating the detected execution signals and historical context if relevant.\n"
-        "2. Provide the failure classification wrapped in <classification> tags.\n"
-        "3. Provide a NEW, targeted agent prompt wrapped in <agent_prompt> tags to fix the issue. "
+        "1. Provide a 'Lessons Learned' summary: what we tried, what specifically failed, and why.\n"
+        "2. Provide your analysis and classification, incorporating the detected execution signals, verification results, and historical context.\n"
+        "3. Provide the failure classification wrapped in <classification> tags.\n"
+        "4. Provide a NEW, targeted agent prompt wrapped in <agent_prompt> tags to fix the issue. "
         "Explicitly address why the previous attempt failed and what to avoid.\n"
     )
     
