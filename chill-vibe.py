@@ -9,6 +9,7 @@ import threading
 import time
 import json
 import yaml
+from pathlib import Path
 
 try:
     from google import genai
@@ -29,6 +30,7 @@ class CodingAgent:
         self.name = name
         self.command = command
         self.dependencies = dependencies or []
+        self.extra_args = []
 
     def validate(self):
         """Check if all dependencies for this agent are installed."""
@@ -42,8 +44,9 @@ class CodingAgent:
         """Launch the coding agent with the provided prompt."""
         print(f"[*] Launching {self.name} in autonomous mode...")
         
+        full_command = self.command + self.extra_args
         process = subprocess.Popen(
-            self.command,
+            full_command,
             stdin=subprocess.PIPE,
             stdout=sys.stdout,
             stderr=sys.stderr,
@@ -86,6 +89,36 @@ AGENT_REGISTRY = {
     )
 }
 
+def load_config(repo_path):
+    """Load project configuration from .chillvibe.json or .chillvibe.yaml/.yml."""
+    for ext in [".json", ".yaml", ".yml"]:
+        config_path = Path(repo_path) / f".chillvibe{ext}"
+        if config_path.exists():
+            print(f"[*] Found project config: {config_path}")
+            try:
+                with open(config_path, "r") as f:
+                    if ext == ".json":
+                        return json.load(f)
+                    else:
+                        return yaml.safe_load(f)
+            except Exception as e:
+                print(f"[!] Warning: Could not parse project config: {e}")
+    return {}
+
+def log_mission(agent_prompt, model_id):
+    """Log the mission details to a hidden file."""
+    log_file = Path(".chillvibe_logs.jsonl")
+    log_entry = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "model_id": model_id,
+        "agent_prompt": agent_prompt
+    }
+    try:
+        with open(log_file, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    except Exception as e:
+        print(f"[!] Warning: Could not write to log file: {e}")
+
 def validate_environment(agent_name):
     """Pre-flight check for dependencies"""
     if agent_name not in AGENT_REGISTRY:
@@ -105,16 +138,22 @@ def validate_environment(agent_name):
 
 def run_git_dump(repo_path, output_file):
     """Phase A: Context Extraction"""
+    repo_path_obj = Path(repo_path)
+    git_dir = repo_path_obj / ".git"
+    
+    if not git_dir.exists() or not git_dir.is_dir():
+        print(f"[!] Warning: {repo_path} is not a valid git repository. Falling back to standard folder processing.")
+    
     print(f"[*] Extracting codebase context from {repo_path}...")
     try:
         from git_dump.core import RepoProcessor
-        processor = RepoProcessor(repo_path, output_file)
+        processor = RepoProcessor(str(repo_path_obj), output_file)
         processor.process()
     except Exception as e:
         print(f"Error running git-dump: {e}")
         sys.exit(1)
 
-def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, verbose=False):
+def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, config_data=None, verbose=False):
     """Phase B: Strategic Reasoning"""
     if not os.path.exists(context_file):
         print(f"Error: {context_file} not found.")
@@ -137,20 +176,8 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, v
     
     # Task 4: Feature Addition - Project Config
     project_constraints = ""
-    for ext in [".json", ".yaml", ".yml"]:
-        config_path = os.path.join(repo_path, f".chillvibe{ext}")
-        if os.path.exists(config_path):
-            print(f"[*] Found project config: {config_path}")
-            try:
-                with open(config_path, "r") as f:
-                    if ext == ".json":
-                        config_data = json.load(f)
-                    else:
-                        config_data = yaml.safe_load(f)
-                    project_constraints = f"\n\n--- User-Defined Project Constraints ---\n{json.dumps(config_data, indent=2)}"
-            except Exception as e:
-                print(f"[!] Warning: Could not parse project config: {e}")
-            break
+    if config_data:
+        project_constraints = f"\n\n--- User-Defined Project Constraints ---\n{json.dumps(config_data, indent=2)}"
 
     # We add a clear delimiter to extract the agent prompt later
     full_prompt = (
@@ -238,13 +265,16 @@ def forward_stdin(process):
         except:
             pass
 
-def run_coding_agent(agent_name, agent_prompt):
+def run_coding_agent(agent_name, agent_prompt, config_data=None):
     """Phase C: Autonomous Execution"""
     if agent_name not in AGENT_REGISTRY:
         print(f"Unknown agent: {agent_name}")
         sys.exit(1)
     
     agent = AGENT_REGISTRY[agent_name]
+    if config_data and "extra_args" in config_data:
+        agent.extra_args = config_data["extra_args"]
+        
     agent.run(agent_prompt)
 
 def get_parser():
@@ -278,6 +308,9 @@ def main():
     # Pre-flight checks
     validate_environment(args.agent)
     
+    # Load project config
+    config_data = load_config(args.path)
+    
     # Phase A: Context Extraction
     run_git_dump(args.path, args.context_file)
     
@@ -287,7 +320,10 @@ def main():
             # We still run Phase B to show what the prompt WOULD be
         
         # Phase B: Strategic Reasoning
-        agent_prompt = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, args.verbose)
+        agent_prompt = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
+        
+        # Log the mission
+        log_mission(agent_prompt, args.model)
         
         if args.dry_run:
             print("\n--- GENERATED AGENT PROMPT ---")
@@ -295,7 +331,7 @@ def main():
             print("------------------------------")
         else:
             # Phase C: Autonomous Execution
-            run_coding_agent(args.agent, agent_prompt)
+            run_coding_agent(args.agent, agent_prompt, config_data)
     finally:
         if args.cleanup and os.path.exists(args.context_file):
             print(f"[*] Cleaning up context file: {args.context_file}")

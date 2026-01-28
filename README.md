@@ -61,6 +61,28 @@ Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subp
 ./chill-vibe.py . --dry-run --cleanup --context-file temp_context.txt
 ```
 
+## ⚙️ Configuration
+
+You can customize the project behavior and agent parameters using a `.chillvibe.json`, `.chillvibe.yaml`, or `.chillvibe.yml` file in the target directory.
+
+### Example `.chillvibe.yaml`:
+```yaml
+extra_args: ["--no-auto-commit"]
+```
+
+If `extra_args` is provided, they will be appended to the coding agent's base command.
+
+## 📝 Mission Logging
+
+`chill-vibe` automatically logs every mission strategy to a hidden file named `.chillvibe_logs.jsonl` in the current working directory. Each entry contains:
+- `timestamp`: When the mission was generated.
+- `model_id`: The Gemini model used for reasoning.
+- `agent_prompt`: The full strategic prompt sent to the coding agent.
+
+## 🛡️ Robustness
+
+`chill-vibe` gracefully handles both git repositories and standard directories. If a directory is not a git repository, it will provide a warning and fallback to standard folder processing for context extraction.
+
 ## 🧰 Dependencies
 - **git-dump:** Installed automatically via `requirements.txt`.
 - **google-genai:** Latest Python SDK for Gemini.
