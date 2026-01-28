@@ -16,6 +16,7 @@ mock_git_dump = MagicMock()
 sys.modules["git_dump"] = mock_git_dump
 sys.modules["git_dump.core"] = MagicMock()
 mock_git_dump_core = sys.modules["git_dump.core"]
+sys.modules["yaml"] = MagicMock()
 
 spec = importlib.util.spec_from_file_location(module_name, file_path)
 chill_vibe = importlib.util.module_from_spec(spec)
@@ -34,7 +35,8 @@ class TestChillVibe(unittest.TestCase):
     @patch('os.path.exists')
     @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
     def test_get_strategic_reasoning_success(self, mock_exists, mock_file):
-        mock_exists.return_value = True
+        # We need to handle multiple calls to exists: context_file and potential config files
+        mock_exists.side_effect = lambda p: p == "context.txt"
         
         # Patch the Client directly in the chill_vibe module
         with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
@@ -43,7 +45,7 @@ class TestChillVibe(unittest.TestCase):
             mock_response.text = "Analysis... <agent_prompt>Work on this project</agent_prompt> Goals..."
             mock_client.models.generate_content.return_value = mock_response
             
-            prompt = chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH")
+            prompt = chill_vibe.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH")
             
             self.assertEqual(prompt, "Work on this project")
             mock_client.models.generate_content.assert_called_once()
@@ -52,7 +54,7 @@ class TestChillVibe(unittest.TestCase):
     @patch('os.path.exists')
     @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
     def test_get_strategic_reasoning_no_tags(self, mock_exists, mock_file):
-        mock_exists.return_value = True
+        mock_exists.side_effect = lambda p: p == "context.txt"
         
         with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
             mock_client = mock_client_class.return_value
@@ -60,7 +62,7 @@ class TestChillVibe(unittest.TestCase):
             mock_response.text = "Full response without tags"
             mock_client.models.generate_content.return_value = mock_response
             
-            prompt = chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH")
+            prompt = chill_vibe.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH")
             
             self.assertEqual(prompt, "Full response without tags")
 
@@ -68,7 +70,7 @@ class TestChillVibe(unittest.TestCase):
     @patch('os.path.exists')
     @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
     def test_get_strategic_reasoning_markdown_tags(self, mock_exists, mock_file):
-        mock_exists.return_value = True
+        mock_exists.side_effect = lambda p: p == "context.txt"
         
         with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
             mock_client = mock_client_class.return_value
@@ -76,7 +78,7 @@ class TestChillVibe(unittest.TestCase):
             mock_response.text = "Here is the prompt:\n\n```xml\n<agent_prompt>\nDo the thing\n</agent_prompt>\n```"
             mock_client.models.generate_content.return_value = mock_response
             
-            prompt = chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH")
+            prompt = chill_vibe.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH")
             
             self.assertEqual(prompt, "Do the thing")
 
@@ -140,7 +142,7 @@ class TestChillVibe(unittest.TestCase):
     @patch('builtins.print')
     @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
     def test_get_strategic_reasoning_verbose(self, mock_print, mock_exists, mock_file):
-        mock_exists.return_value = True
+        mock_exists.side_effect = lambda p: p == "context.txt"
         
         with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
             mock_client = mock_client_class.return_value
@@ -162,7 +164,7 @@ class TestChillVibe(unittest.TestCase):
             with patch('chill_vibe.types.GenerateContentConfig') as mock_config, \
                  patch('chill_vibe.types.ThinkingConfig') as mock_thinking_config:
                 
-                chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH", verbose=True)
+                chill_vibe.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH", verbose=True)
                 
                 # Check if thinking budget was passed to ThinkingConfig
                 mock_thinking_config.assert_called_once()

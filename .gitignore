@@ -142,6 +142,9 @@ dmypy.json
 *.swp
 *.swo
 
+# Project specific
+codebase_context.txt
+
 # OS generated files
 .DS_Store
 .DS_Store?

@@ -7,6 +7,8 @@ import subprocess
 import sys
 import threading
 import time
+import json
+import yaml
 
 try:
     from google import genai
@@ -21,25 +23,83 @@ except ImportError:
     print("Error: git-dump not found. Please run './setup.sh' to install dependencies.")
     sys.exit(1)
 
+class CodingAgent:
+    """Represents a coding agent that can be executed."""
+    def __init__(self, name, command, dependencies=None):
+        self.name = name
+        self.command = command
+        self.dependencies = dependencies or []
+
+    def validate(self):
+        """Check if all dependencies for this agent are installed."""
+        missing = []
+        for dep in self.dependencies:
+            if not shutil.which(dep):
+                missing.append(dep)
+        return missing
+
+    def run(self, agent_prompt):
+        """Launch the coding agent with the provided prompt."""
+        print(f"[*] Launching {self.name} in autonomous mode...")
+        
+        process = subprocess.Popen(
+            self.command,
+            stdin=subprocess.PIPE,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True,
+            bufsize=1
+        )
+        
+        # 1. Pipe the initial agent prompt
+        process.stdin.write(agent_prompt + "\n")
+        process.stdin.flush()
+        
+        # 2. Start a background thread to forward user input to the agent
+        threading.Thread(target=forward_stdin, args=(process,), daemon=True).start()
+        
+        try:
+            process.wait()
+        except KeyboardInterrupt:
+            print(f"\n[*] chill-vibe: Terminating {self.name}...")
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+AGENT_REGISTRY = {
+    "gemini-cli": CodingAgent(
+        name="gemini-cli",
+        command=["npx", "@google/gemini-cli", "--yolo"],
+        dependencies=["npx"]
+    ),
+    "qwen": CodingAgent(
+        name="qwen",
+        command=["qwen"],
+        dependencies=["qwen"]
+    ),
+    "aider": CodingAgent(
+        name="aider",
+        command=["aider", "--architect"],
+        dependencies=["aider"]
+    )
+}
+
 def validate_environment(agent_name):
     """Pre-flight check for dependencies"""
-    dependencies = ["git"]
-    if agent_name == "gemini-cli":
-        dependencies.append("npx")
-    elif agent_name == "qwen":
-        dependencies.append("qwen")
-    
-    # Also check for the chill-vibe script dependencies implicitly by being here, 
-    # but let's check for git-dump's underlying tool if it has one? 
-    # git-dump is a python module, but we can check if git is present.
-    
-    missing = []
-    for dep in dependencies:
-        if not shutil.which(dep):
-            missing.append(dep)
+    if agent_name not in AGENT_REGISTRY:
+        print(f"Error: Unknown agent '{agent_name}'")
+        sys.exit(1)
+        
+    agent = AGENT_REGISTRY[agent_name]
+    missing = agent.validate()
             
+    if not shutil.which("git"):
+        missing.append("git")
+
     if missing:
-        print(f"Error: Missing required dependencies: {', '.join(missing)}")
+        print(f"Error: Missing required dependencies: {', '.join(set(missing))}")
         print("Please install them and try again.")
         sys.exit(1)
 
@@ -54,7 +114,7 @@ def run_git_dump(repo_path, output_file):
         print(f"Error running git-dump: {e}")
         sys.exit(1)
 
-def get_strategic_reasoning(context_file, model_id, thinking_level, verbose=False):
+def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, verbose=False):
     """Phase B: Strategic Reasoning"""
     if not os.path.exists(context_file):
         print(f"Error: {context_file} not found.")
@@ -75,6 +135,23 @@ def get_strategic_reasoning(context_file, model_id, thinking_level, verbose=Fals
         "Before you give the prompt, what should the goals be for the agent and how will the agent know it has reached those goals?"
     )
     
+    # Task 4: Feature Addition - Project Config
+    project_constraints = ""
+    for ext in [".json", ".yaml", ".yml"]:
+        config_path = os.path.join(repo_path, f".chillvibe{ext}")
+        if os.path.exists(config_path):
+            print(f"[*] Found project config: {config_path}")
+            try:
+                with open(config_path, "r") as f:
+                    if ext == ".json":
+                        config_data = json.load(f)
+                    else:
+                        config_data = yaml.safe_load(f)
+                    project_constraints = f"\n\n--- User-Defined Project Constraints ---\n{json.dumps(config_data, indent=2)}"
+            except Exception as e:
+                print(f"[!] Warning: Could not parse project config: {e}")
+            break
+
     # We add a clear delimiter to extract the agent prompt later
     full_prompt = (
         f"{preamble}\n\n"
@@ -83,6 +160,7 @@ def get_strategic_reasoning(context_file, model_id, thinking_level, verbose=Fals
         "2. Provide the final prompt for the coding agent in a single block wrapped in <agent_prompt> tags.\n"
         "3. Ensure the agent prompt is comprehensive and self-contained.\n\n"
         f"--- CODEBASE CONTEXT ---\n{codebase_context}"
+        f"{project_constraints}"
     )
     
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
@@ -129,8 +207,10 @@ def get_strategic_reasoning(context_file, model_id, thinking_level, verbose=Fals
 
     full_text = response.text
     
+    # Task 2: Robust Parsing - handles markdown wrappers
     # Extract the portion intended for the agent using regex to be more flexible
-    match = re.search(r"<agent_prompt>(.*?)</agent_prompt>", full_text, re.DOTALL)
+    # Matches <agent_prompt>...# </agent_prompt> even if wrapped in markdown blocks
+    match = re.search(r"(?:```(?:xml|html)?\s*)?<agent_prompt>(.*?)</agent_prompt>(?:\s*```)?", full_text, re.DOTALL)
     if match:
         agent_prompt = match.group(1).strip()
     else:
@@ -160,50 +240,17 @@ def forward_stdin(process):
 
 def run_coding_agent(agent_name, agent_prompt):
     """Phase C: Autonomous Execution"""
-    if agent_name == "gemini-cli":
-        # Using npx to run the gemini-cli
-        cmd = ["npx", "@google/gemini-cli", "--yolo"]
-    elif agent_name == "qwen":
-        cmd = ["qwen"]
-    else:
+    if agent_name not in AGENT_REGISTRY:
         print(f"Unknown agent: {agent_name}")
         sys.exit(1)
     
-    print(f"[*] Launching {agent_name} in autonomous mode...")
-    
-    # Launch with a pipe for stdin so we can inject the prompt,
-    # then hand over to the user.
-    process = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        text=True,
-        bufsize=1
-    )
-    
-    # 1. Pipe the initial agent prompt
-    process.stdin.write(agent_prompt + "\n")
-    process.stdin.flush()
-    
-    # 2. Start a background thread to forward user input to the agent
-    # This allows the user to interact (e.g., "keep trying", Ctrl+C, etc.)
-    threading.Thread(target=forward_stdin, args=(process,), daemon=True).start()
-    
-    try:
-        process.wait()
-    except KeyboardInterrupt:
-        print("\n[*] chill-vibe: Terminating agent...")
-        process.terminate()
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            process.kill()
+    agent = AGENT_REGISTRY[agent_name]
+    agent.run(agent_prompt)
 
 def get_parser():
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
     parser.add_argument("path", nargs="?", help="The directory of the repo to analyze")
-    parser.add_argument("--agent", choices=["gemini-cli", "qwen"], default="gemini-cli", 
+    parser.add_argument("--agent", choices=list(AGENT_REGISTRY.keys()), default="gemini-cli", 
                         help="Choice of coding agent (default: gemini-cli)")
     parser.add_argument("--thinking", default="HIGH", 
                         help="Thinking level (default: HIGH)")
@@ -240,7 +287,7 @@ def main():
             # We still run Phase B to show what the prompt WOULD be
         
         # Phase B: Strategic Reasoning
-        agent_prompt = get_strategic_reasoning(args.context_file, args.model, args.thinking, args.verbose)
+        agent_prompt = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, args.verbose)
         
         if args.dry_run:
             print("\n--- GENERATED AGENT PROMPT ---")

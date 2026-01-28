@@ -1,3 +1,4 @@
 google-genai
 pathspec
+pyyaml
 git+https://github.com/tomwolfe/git_dump.git
