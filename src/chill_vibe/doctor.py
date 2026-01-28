@@ -44,7 +44,7 @@ def check_api_connectivity(api_key):
         return False, f"Connection failed: {str(e)}"
     return False, "Unknown error"
 
-def run_doctor(registry):
+def run_doctor(registry, fix=False):
     """Check environment and dependencies."""
     print("--- chill-vibe Doctor Report ---")
     
@@ -78,7 +78,7 @@ def run_doctor(registry):
             print(f"[✓] google-genai: Installed ({version})")
     else:
         print("[✗] google-genai: Not installed")
-        if input("[?] Would you like to attempt to install google-genai? (y/n): ").lower() == 'y':
+        if fix or input("[?] Would you like to attempt to install google-genai? (y/n): ").lower() == 'y':
             install_package("google-genai")
 
     # 2b. Check Node.js and NPM
@@ -103,7 +103,7 @@ def run_doctor(registry):
         print("[✓] git-dump: Installed")
     else:
         print("[✗] git-dump: Not installed")
-        if input("[?] Would you like to attempt to install git-dump? (y/n): ").lower() == 'y':
+        if fix or input("[?] Would you like to attempt to install git-dump? (y/n): ").lower() == 'y':
             install_package("git+https://github.com/tomwolfe/git_dump.git")
 
     # 4. Check git
@@ -131,7 +131,7 @@ def run_doctor(registry):
             print(f"  [✓] {name}: Available")
         else:
             print(f"  [✗] {name}: Missing dependencies ({', '.join(missing)})")
-            if input(f"  [?] Would you like to attempt to install missing dependencies for {name}? (y/n): ").lower() == 'y':
+            if fix or input(f"  [?] Would you like to attempt to install missing dependencies for {name}? (y/n): ").lower() == 'y':
                 for dep in missing:
                     if dep in ["aider", "qwen", "mentat", "gptme"]:
                         install_package(dep)

@@ -322,9 +322,13 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
                 passed = (process.returncode == 0)
                 result["passed"] = passed
                 result["message"] = f"Pytest exited with code {process.returncode}"
+                
+                # Capture last 20 lines of output for grounded recovery
+                stdout_lines = (process.stdout or "").splitlines()
+                stderr_lines = (process.stderr or "").splitlines()
                 result["details"] = {
-                    "stdout": process.stdout,
-                    "stderr": process.stderr,
+                    "stdout": "\n".join(stdout_lines[-20:]),
+                    "stderr": "\n".join(stderr_lines[-20:]),
                     "exit_code": process.returncode
                 }
 
@@ -382,9 +386,12 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
                 passed = (process.returncode == 0)
                 result["passed"] = passed
                 result["message"] = f"Ruff exited with code {process.returncode}"
+                
+                stdout_lines = (process.stdout or "").splitlines()
+                stderr_lines = (process.stderr or "").splitlines()
                 result["details"] = {
-                    "stdout": process.stdout,
-                    "stderr": process.stderr,
+                    "stdout": "\n".join(stdout_lines[-20:]),
+                    "stderr": "\n".join(stderr_lines[-20:]),
                     "exit_code": process.returncode
                 }
             else:
@@ -399,9 +406,12 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
                 passed = (process.returncode == 0)
                 result["passed"] = passed
                 result["message"] = f"Command exited with code {process.returncode}"
+                
+                stdout_lines = (process.stdout or "").splitlines()
+                stderr_lines = (process.stderr or "").splitlines()
                 result["details"] = {
-                    "stdout": process.stdout,
-                    "stderr": process.stderr,
+                    "stdout": "\n".join(stdout_lines[-20:]),
+                    "stderr": "\n".join(stderr_lines[-20:]),
                     "exit_code": process.returncode
                 }
             

@@ -34,6 +34,8 @@ def get_parser(registry):
     parser.add_argument("--exclude", help="Comma-separated list of glob patterns to ignore during context extraction")
     parser.add_argument("--doctor", action="store_true",
                         help="Run a diagnostic check on the environment and agents")
+    parser.add_argument("--fix", action="store_true",
+                        help="Automatically attempt to fix issues found by the doctor")
     parser.add_argument("--init", action="store_true",
                         help="Initialize a default .chillvibe.yaml in the current directory")
     parser.add_argument("--history", action="store_true",
@@ -72,7 +74,7 @@ def main():
         sys.exit(0)
 
     if args.doctor:
-        run_doctor(registry)
+        run_doctor(registry, fix=args.fix)
         sys.exit(0)
 
     if args.init:
@@ -164,6 +166,14 @@ def main():
             # Structured Recovery Loop
             classification = None
             lessons_learned = None
+            signals = None
+
+            if exit_code != 0 and exit_code != 130:
+                from .reasoning import classify_failure_signals
+                agent = registry[args.agent]
+                failure_output = "".join(list(agent.last_output))
+                signals = classify_failure_signals(exit_code, failure_output)
+
             if exit_code != 0 and exit_code != 130 and args.retry:
                 max_retries = config_data.get("max_retries") or global_config.get("max_retries") or DEFAULT_CONFIG.get("max_retries", 1)
                 retry_count = 0
@@ -180,7 +190,7 @@ def main():
                     # Classify and recover
                     agent = registry[args.agent]
                     failure_output = "".join(list(agent.last_output))
-                    recovery_prompt, classification, lessons_learned = get_recovery_strategy(
+                    recovery_prompt, classification, lessons_learned, signals = get_recovery_strategy(
                         args.path, 
                         args.model, 
                         mission.agent_prompt, 
@@ -235,7 +245,8 @@ def main():
                 exit_code=exit_code,
                 classification=classification,
                 verification_results=verification_results,
-                lessons_learned=lessons_learned
+                lessons_learned=lessons_learned,
+                signals=signals
             )
             
             # Post-run summary

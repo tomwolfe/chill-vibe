@@ -7,11 +7,12 @@ class MemoryManager:
     def __init__(self, log_path=".chillvibe_logs.jsonl"):
         self.log_path = Path(log_path)
 
-    def get_similar_failures(self, classification, limit=3):
-        """Find recent failures with the same classification."""
+    def get_similar_failures(self, classification, signals=None, limit=3):
+        """Find recent failures with the same classification, ranked by relevance to signals."""
         if not self.log_path.exists():
             return []
             
+        signals = set(signals or [])
         failures = []
         try:
             with open(self.log_path, "r") as f:
@@ -20,18 +21,34 @@ class MemoryManager:
                         entry = json.loads(line)
                         if (entry.get("status") == "FAILED" and 
                             entry.get("classification") == classification):
+                            
+                            # Calculate relevance score based on signal matching
+                            entry_signals = set(entry.get("signals") or [])
+                            score = 0
+                            if signals:
+                                match_count = len(signals.intersection(entry_signals))
+                                score = match_count
+                            
+                            entry["relevance_score"] = score
                             failures.append(entry)
                     except json.JSONDecodeError:
                         continue
         except Exception as e:
             print(f"[!] Warning: Could not read memory logs: {e}")
             
-        # Return most recent failures first
-        return failures[::-1][:limit]
+        # Rank by relevance score (primary) and timestamp (secondary)
+        # We sort by score descending, then by original order (which is chronological) reversed
+        ranked_failures = sorted(
+            failures, 
+            key=lambda x: (x.get("relevance_score", 0), failures.index(x)), 
+            reverse=True
+        )
+        
+        return ranked_failures[:limit]
 
-    def get_top_lessons(self, classification, limit=3):
-        """Extract 'Lessons Learned' from previous failures of the same classification."""
-        failures = self.get_similar_failures(classification, limit=limit)
+    def get_top_lessons(self, classification, signals=None, limit=3):
+        """Extract 'Lessons Learned' from previous failures of the same classification, ranked by relevance."""
+        failures = self.get_similar_failures(classification, signals=signals, limit=limit)
         lessons = []
         for f in failures:
             lesson = f.get("lessons_learned")

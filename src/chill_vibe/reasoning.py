@@ -15,7 +15,7 @@ except ImportError:
     genai = None
     types = None
 
-def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None, lessons_learned=None):
+def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None, lessons_learned=None, signals=None):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
@@ -26,6 +26,7 @@ def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_
         "status": status,
         "exit_code": exit_code,
         "classification": classification,
+        "signals": signals,
         "lessons_learned": lessons_learned,
         "success_criteria": mission.success_criteria if hasattr(mission, 'success_criteria') else mission,
         "verification_results": verification_results,
@@ -312,15 +313,29 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
 
     # Format verification results if available
     verification_context = ""
+    error_details = ""
     if verification_results:
         verification_context = "\n--- VERIFICATION RESULTS ---\n"
         for res in verification_results:
             status = "PASSED" if res.get("passed") else "FAILED"
             verification_context += f"- [{status}] {res.get('criterion')}: {res.get('message')}\n"
+            
+            # Extract details for grounded recovery
+            if not res.get("passed") and "details" in res:
+                details = res["details"]
+                if "stdout" in details or "stderr" in details:
+                    error_details += f"\n--- Error snippet for {res.get('criterion')} ---\n"
+                    if details.get("stdout"):
+                        error_details += f"STDOUT:\n{details['stdout']}\n"
+                    if details.get("stderr"):
+                        error_details += f"STDERR:\n{details['stderr']}\n"
+
+    if error_details:
+        verification_context += "\n--- SPECIFIC ERROR DETAILS ---\n" + error_details
     
     # Read history for memory using MemoryManager
     memory = MemoryManager()
-    top_lessons = memory.get_top_lessons(tentative_class, limit=3)
+    top_lessons = memory.get_top_lessons(tentative_class, signals=signals, limit=3)
     
     history_context = ""
     if top_lessons:
@@ -329,7 +344,7 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
             history_context += f"{i}. {lesson}\n"
     else:
         # Fallback to general recent failures if no specific ones found
-        recent_failures = memory.get_similar_failures("LOGIC", limit=2) + memory.get_similar_failures("TOOLING", limit=1)
+        recent_failures = memory.get_similar_failures("LOGIC", signals=signals, limit=2) + memory.get_similar_failures("TOOLING", signals=signals, limit=1)
         if recent_failures:
             history_context = "\n--- RECENT FAILURE HISTORY ---\n"
             for entry in recent_failures:
@@ -387,4 +402,4 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     agent_prompt_match = re.search(r"(?:```(?:xml|html)?\s*)?<agent_prompt>(.*?)</agent_prompt>(?:\s*```)?", full_text, re.DOTALL)
     recovery_prompt = agent_prompt_match.group(1).strip() if agent_prompt_match else full_text
     
-    return recovery_prompt, classification, lessons_learned
+    return recovery_prompt, classification, lessons_learned, signals
