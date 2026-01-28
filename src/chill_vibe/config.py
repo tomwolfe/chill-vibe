@@ -42,10 +42,14 @@ def get_agent_registry(repo_path=None):
     if global_config_path.exists():
         try:
             with open(global_config_path, "r") as f:
-                global_agents = yaml.safe_load(f)
-                if global_agents and isinstance(global_agents, dict):
-                    for name, cfg in global_agents.items():
-                        registry[name] = CodingAgent(name, **cfg)
+                global_data = yaml.safe_load(f)
+                if global_data and isinstance(global_data, dict):
+                    # Check for agents key or assume top-level is agents if it doesn't look like a config with keys
+                    agents_data = global_data.get("agents", global_data)
+                    if isinstance(agents_data, dict):
+                        for name, cfg in agents_data.items():
+                            if name != "default_model": # Skip the special key if at top level
+                                registry[name] = CodingAgent(name, **cfg)
         except Exception as e:
             print(f"[!] Warning: Could not parse global agent config: {e}")
 
@@ -59,3 +63,16 @@ def get_agent_registry(repo_path=None):
                     registry[name] = CodingAgent(name, **cfg)
                     
     return registry
+
+def get_default_model():
+    """Fetch default model from global config or return standard default."""
+    global_config_path = Path.home() / ".chillvibe" / "agents.yaml"
+    if global_config_path.exists():
+        try:
+            with open(global_config_path, "r") as f:
+                global_data = yaml.safe_load(f)
+                if global_data and isinstance(global_data, dict):
+                    return global_data.get("default_model", "gemini-3-flash-preview")
+        except Exception:
+            pass
+    return "gemini-3-flash-preview"

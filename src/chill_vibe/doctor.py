@@ -37,11 +37,26 @@ def run_doctor(registry):
 
     # 2. Check google-genai
     if genai:
-        print("[✓] google-genai: Installed")
+        try:
+            import importlib.metadata
+            version = importlib.metadata.version("google-genai")
+        except Exception:
+            version = "unknown"
+        
+        if version != "unknown" and version < "0.3.0":
+            print(f"[✗] google-genai: Version {version} is too old (min 0.3.0 required for thinking)")
+        else:
+            print(f"[✓] google-genai: Installed ({version})")
     else:
         print("[✗] google-genai: Not installed")
         if input("[?] Would you like to attempt to install google-genai? (y/n): ").lower() == 'y':
             install_package("google-genai")
+
+    # 2b. Check npx
+    if shutil.which("npx"):
+        print("[✓] npx: Installed")
+    else:
+        print("[✗] npx: Not installed (Required for gemini-cli agent)")
 
     # 3. Check git-dump
     if git_dump:
@@ -80,6 +95,15 @@ def validate_environment(agent_name, registry):
     if not genai:
         print("Error: google-genai SDK not found. Please run 'pip install google-genai'.")
         sys.exit(1)
+    
+    try:
+        import importlib.metadata
+        version = importlib.metadata.version("google-genai")
+        if version < "0.3.0":
+            print(f"Error: google-genai version {version} is too old. Please upgrade: pip install -U google-genai")
+            sys.exit(1)
+    except Exception:
+        pass # If we can't determine version, hope for the best
     
     if not git_dump:
         print("Error: git-dump not found. Please run './setup.sh' to install dependencies.")

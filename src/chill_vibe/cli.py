@@ -2,21 +2,23 @@ import argparse
 import os
 import sys
 import time
-from .config import get_agent_registry, load_config
+from . import __version__
+from .config import get_agent_registry, load_config, get_default_model
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history
 from .execution import run_coding_agent
 
 def get_parser(registry):
+    default_model = get_default_model()
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
     parser.add_argument("path", nargs="?", help="The directory of the repo to analyze")
     parser.add_argument("--agent", default="gemini-cli", 
                         help=f"Choice of coding agent (default: gemini-cli). Available: {', '.join(registry.keys())}")
     parser.add_argument("--thinking", default="HIGH", 
                         help="Thinking level (default: HIGH)")
-    parser.add_argument("--model", default="gemini-3-flash-preview", 
-                        help="Model ID (default: gemini-3-flash-preview)")
+    parser.add_argument("--model", default=default_model, 
+                        help=f"Model ID (default: {default_model})")
     parser.add_argument("--dry-run", action="store_true", 
                         help="Output the context and the reasoning prompt without invoking the coding agent")
     parser.add_argument("--verbose", "-v", action="store_true",
@@ -27,11 +29,12 @@ def get_parser(registry):
                         help="Delete the context file after execution")
     parser.add_argument("--depth", type=int, help="Limit how deep the context extraction crawls")
     parser.add_argument("--include-ext", help="Filter extraction to specific file extensions (e.g., py,md)")
+    parser.add_argument("--exclude", help="Comma-separated list of glob patterns to ignore during context extraction")
     parser.add_argument("--doctor", action="store_true",
                         help="Run a diagnostic check on the environment and agents")
     parser.add_argument("--history", action="store_true",
                         help="Show mission history")
-    parser.add_argument("--version", action="version", version="chill-vibe v0.1.0")
+    parser.add_argument("--version", action="version", version=f"chill-vibe v{__version__}")
     return parser
 
 def main():
@@ -64,6 +67,9 @@ def main():
     
     # Phase A: Context Extraction
     exclude_patterns = config_data.get("exclude_patterns", [])
+    if args.exclude:
+        exclude_patterns.extend([p.strip() for p in args.exclude.split(",")])
+    
     run_git_dump(args.path, args.context_file, exclude_patterns, args.depth, args.include_ext)
     
     if args.model == "flash":

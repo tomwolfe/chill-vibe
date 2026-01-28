@@ -32,8 +32,10 @@ def forward_stdin(process):
                     break
                 process.stdin.write(char)
                 process.stdin.flush()
-    except (Exception, EOFError):
-        pass
+    except Exception as e:
+        log_file = os.path.join(os.getcwd(), ".chillvibe_debug.log")
+        with open(log_file, "a") as f:
+            f.write(f"forward_stdin error: {e}\n")
     finally:
         try:
             process.stdin.close()
