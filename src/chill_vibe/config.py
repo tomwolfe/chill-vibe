@@ -2,7 +2,7 @@ import json
 import yaml
 from pathlib import Path
 from .execution import CodingAgent
-from .constants import DEFAULT_MODEL
+from .constants import DEFAULT_CONFIG
 
 DEFAULT_AGENTS = {
     "gemini-cli": {
@@ -27,6 +27,8 @@ DEFAULT_AGENTS = {
     }
 }
 
+VALID_CONFIG_KEYS = {"agents", "extra_args", "model", "thinking_level", "exclude_patterns", "depth", "include_ext"}
+
 def load_config(repo_path):
     """Load project configuration from .chillvibe.json or .chillvibe.yaml/.yml."""
     for ext in [".json", ".yaml", ".yml"]:
@@ -35,9 +37,15 @@ def load_config(repo_path):
             try:
                 with open(config_path, "r") as f:
                     if ext == ".json":
-                        return json.load(f)
+                        config = json.load(f)
                     else:
-                        return yaml.safe_load(f)
+                        config = yaml.safe_load(f)
+                    
+                    if isinstance(config, dict):
+                        unknown_keys = set(config.keys()) - VALID_CONFIG_KEYS
+                        if unknown_keys:
+                            print(f"[!] Warning: Unknown keys in {config_path.name}: {', '.join(unknown_keys)}")
+                    return config
             except Exception as e:
                 print(f"[!] Warning: Could not parse project config: {e}")
     return {}
@@ -104,7 +112,7 @@ def get_global_config():
 def get_default_model():
     """Fetch default model from global config or return standard default."""
     global_config = get_global_config()
-    return global_config.get("default_model", DEFAULT_MODEL)
+    return global_config.get("default_model", DEFAULT_CONFIG["model"])
 
 def init_project(repo_path):
     """Create a default .chillvibe.yaml in the current directory."""

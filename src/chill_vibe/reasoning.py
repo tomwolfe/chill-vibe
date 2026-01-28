@@ -4,7 +4,7 @@ import time
 import json
 import sys
 from pathlib import Path
-from .constants import BUDGETS
+from .constants import DEFAULT_CONFIG
 
 try:
     from google import genai
@@ -13,7 +13,7 @@ except ImportError:
     genai = None
     types = None
 
-def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN"):
+def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN", exit_code=None):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
@@ -22,6 +22,7 @@ def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN"):
         "agent_name": agent_name,
         "duration_seconds": round(duration, 2),
         "status": status,
+        "exit_code": exit_code,
         "agent_prompt": agent_prompt
     }
     try:
@@ -37,8 +38,8 @@ def show_history():
         print("No history found.")
         return
 
-    print(f"{ 'Timestamp':<20} | { 'Model':<25} | { 'Agent':<15} | { 'Status':<10}")
-    print("-" * 80)
+    print(f"{ 'Timestamp':<20} | { 'Model':<25} | { 'Agent':<15} | { 'Status':<10} | { 'Exit':<5}")
+    print("-" * 90)
     
     try:
         with open(log_file, "r") as f:
@@ -49,7 +50,8 @@ def show_history():
                     model = entry.get("model_id", "N/A")
                     agent = entry.get("agent_name", "N/A")
                     status = entry.get("status", "N/A")
-                    print(f"{timestamp:<20} | {model:<25} | {agent:<15} | {status:<10}")
+                    exit_code = entry.get("exit_code", "N/A")
+                    print(f"{timestamp:<20} | {model:<25} | {agent:<15} | {status:<10} | {exit_code:<5}")
                 except json.JSONDecodeError:
                     continue
     except Exception as e:
@@ -97,7 +99,8 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
     
-    budget = BUDGETS.get(thinking_level.upper(), BUDGETS["HIGH"])
+    budgets = DEFAULT_CONFIG["budgets"]
+    budget = budgets.get(thinking_level.upper(), budgets["HIGH"])
 
     # Update config with thinking budget
     config = types.GenerateContentConfig(

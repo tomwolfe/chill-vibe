@@ -20,10 +20,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-DEFAULT_MODEL = "gemini-3-flash-preview"
-
-BUDGETS = {
-    "LOW": 2048,
-    "MEDIUM": 8192,
-    "HIGH": 16384
+DEFAULT_CONFIG = {
+    "model": "gemini-3-flash-preview",
+    "thinking_level": "HIGH",
+    "budgets": {
+        "LOW": 2048,
+        "MEDIUM": 8192,
+        "HIGH": 16384
+    }
 }

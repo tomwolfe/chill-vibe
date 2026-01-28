@@ -4,7 +4,7 @@ import sys
 import time
 from . import __version__
 from .config import get_agent_registry, load_config, get_global_config, init_project
-from .constants import DEFAULT_MODEL
+from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, get_recovery_strategy
@@ -47,7 +47,7 @@ def resolve_config(args, config_data, global_config):
 
     # Resolve Model: CLI > Local > Global > Default
     if args.model is None:
-        args.model = config_data.get("model") or global_config.get("model") or global_config.get("default_model") or DEFAULT_MODEL
+        args.model = config_data.get("model") or global_config.get("model") or global_config.get("default_model") or DEFAULT_CONFIG["model"]
     
     if args.model == "flash":
         args.model = "gemini-3-flash-preview"
@@ -111,7 +111,7 @@ def main():
         duration = time.time() - start_time
         
         if args.dry_run:
-            log_mission(agent_prompt, args.model, args.agent, duration, status="DRY_RUN")
+            log_mission(agent_prompt, args.model, args.agent, duration, status="DRY_RUN", exit_code=0)
             print("\n--- GENERATED AGENT PROMPT ---")
             print(agent_prompt)
             print("------------------------------")
@@ -137,7 +137,7 @@ def main():
             if exit_code == 130:
                 status = "INTERRUPTED"
                 
-            log_mission(agent_prompt, args.model, args.agent, duration, status=status)
+            log_mission(agent_prompt, args.model, args.agent, duration, status=status, exit_code=exit_code)
     finally:
         if args.cleanup and os.path.exists(args.context_file):
             print(f"[*] Cleaning up context file: {args.context_file}")

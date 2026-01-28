@@ -136,7 +136,8 @@ class TestChillVibe(unittest.TestCase):
         mock_process.poll.side_effect = [None, None, None, 0]
         
         with patch('sys.stdin.read', side_effect=['a', 'b', '']), \
-             patch('sys.stdin.isatty', return_value=False):
+             patch('sys.stdin.isatty', return_value=False), \
+             patch('select.select', side_effect=[([sys.stdin], [], []), ([sys.stdin], [], []), ([], [], [])]):
             execution.forward_stdin(mock_process)
             
         self.assertEqual(mock_process.stdin.write.call_count, 2)

@@ -73,8 +73,8 @@ class TestConfigHierarchy(unittest.TestCase):
         config_data = {}
         global_config = {}
         
-        # We need to mock DEFAULT_MODEL as it's used in resolve_config
-        with patch('chill_vibe.cli.DEFAULT_MODEL', 'default-model'):
+        # We need to mock DEFAULT_CONFIG as it's used in resolve_config
+        with patch('chill_vibe.cli.DEFAULT_CONFIG', {'model': 'default-model'}):
             resolved_args = cli.resolve_config(args, config_data, global_config)
         
         self.assertEqual(resolved_args.thinking, 'HIGH') # Hardcoded default in resolve_config

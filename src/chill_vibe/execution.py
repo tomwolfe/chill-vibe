@@ -5,6 +5,7 @@ import subprocess
 import threading
 import tty
 import termios
+import select
 
 import time
 import collections
@@ -32,18 +33,16 @@ def forward_stdin(process):
         with raw_mode(sys.stdin):
             while process.poll() is None:
                 try:
-                    # Using a small timeout or non-blocking read would be better, 
-                    # but simple blocking read(1) is usually okay if it breaks on EOF.
-                    # We add a tiny sleep if we're in a tight loop somehow.
-                    char = sys.stdin.read(1)
-                    if not char:
-                        # On some systems, read(1) might return empty if no input is available
-                        # even if it's supposed to block.
-                        time.sleep(0.01)
-                        continue
-                    process.stdin.write(char)
-                    process.stdin.flush()
-                except (EOFError, BrokenPipeError):
+                    # Use select to wait for input or process death
+                    # 0.1s timeout allows frequent checks of process.poll()
+                    r, _, _ = select.select([sys.stdin], [], [], 0.1)
+                    if r:
+                        char = sys.stdin.read(1)
+                        if not char:
+                            break
+                        process.stdin.write(char)
+                        process.stdin.flush()
+                except (EOFError, BrokenPipeError, OSError):
                     break
                 except Exception:
                     time.sleep(0.01)
@@ -57,8 +56,10 @@ def forward_stdin(process):
             pass
     finally:
         try:
-            process.stdin.close()
-        except:
+            # Ensure stdin is closed to signal EOF to the subprocess
+            if process.stdin:
+                process.stdin.close()
+        except Exception:
             pass
 
 def output_reader(pipe, stream, buffer):
