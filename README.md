@@ -1,178 +1,124 @@
 # chill-vibe 🎧
 
-**chill-vibe** is a CLI orchestration layer for autonomous coding agents that optimizes *reliability, determinism, and recovery* rather than raw model intelligence.
+**The Reliability Layer for Autonomous Coding Agents.**
 
-It implements a **Reasoning → Mission → Verification → Recovery** control loop that consistently outperforms direct agent invocation on complex, multi-file codebases—without requiring larger models, IDE lock-in, or human babysitting.
+`chill-vibe` is a CLI orchestration layer that wraps autonomous coding agents (like Aider, Gemini-CLI, or Qwen) in a **Reasoning → Mission → Verification → Recovery** control loop. 
 
-chill-vibe’s advantage is architectural: it makes autonomous coding **harder to fail**.
-
----
-
-## 🚀 What Makes chill-vibe Different
-
-Most coding agents rely on:
-
-* implicit success (“this looks done”),
-* blind retries,
-* model self-assessment,
-* and human intervention.
-
-**chill-vibe replaces those failure points with explicit structure:**
-
-* **Machine-verifiable success criteria** (not vibes)
-* **Automatic State Rollback** (never start recovery from a corrupted state)
-* **Second-pass mission validation** (expert auditor pass)
-* **Structured JSON mission contracts** (zero ambiguity)
-* **Failure classification + memory-aware recovery**
-* **Deterministic behavior across different models**
-
-This shifts performance from *peak brilliance* to *variance compression*—the dominant failure mode of autonomous agents today.
+Most coding agents fail because success is implicit and retries are blind. `chill-vibe` fixes this by treating autonomous coding as a control system rather than a chat interface.
 
 ---
 
-## 🧠 The Architecture
+## 🚀 Why chill-vibe?
 
-chill-vibe operates as a four-stage control loop:
+If you've used autonomous agents, you know the "Peak Brilliance vs. High Variance" problem: an agent might solve a complex refactor in one go, then spend the next hour hallucinating a fix for a syntax error it created.
 
-### Phase A: Context Extraction (The "Eyes")
-
-Uses `git-dump` to aggregate the entire repository into a single, LLM-friendly context file (default: `codebase_context.txt`).
-
-This guarantees full architectural visibility and eliminates partial-context reasoning errors.
-
----
-
-### Phase B: Strategic Reasoning (The "Brain")
-
-Uses Gemini (default: `gemini-3-flash-preview`) exclusively for *planning*, not execution.
-
-1. **Strategic Analysis**: Analyzes the codebase and user constraints to define a path forward.
-2. **Mission Synthesis**: Generates a **structured JSON mission contract** containing:
-   * Explicit objectives & Non-goals
-   * Forbidden actions
-   * Ordered execution checklist
-   * **Machine-verifiable success criteria** (commands, file checks, invariants)
-3. **Second-Pass Validation**: An "Expert Mission Auditor" pass reviews the contract for completeness, testability, and safety before execution.
-
-This step intentionally reduces prompt entropy and removes open-ended interpretation.
+**chill-vibe eliminates variance by enforcing:**
+*   **Explicit Mission Contracts:** No vague instructions. Gemini generates a structured JSON contract with machine-verifiable success criteria.
+*   **Automatic State Rollback:** If a mission fails verification, the system performs a `git reset --hard` to ensure the next recovery attempt starts from a clean state.
+*   **Grounded Recovery:** When an agent fails, chill-vibe classifies the error (Logic, Tooling, Environment) and injects "Lessons Learned" from previous failures into the next attempt.
+*   **Full Context Visibility:** Uses `git-dump` to ensure the agent sees the entire architectural state, not just a few files.
 
 ---
 
-### Phase C: Autonomous Execution (The "Muscle")
+## 🧠 The Control Loop
 
-Launches a coding agent (`gemini-cli`, `qwen`, `aider`, etc.) as a subprocess.
+### 1. Context Extraction (The Eyes)
+Aggregates your entire repository into a single, LLM-friendly context file. This eliminates partial-context reasoning errors.
 
-* The agent receives a self-contained, checklist-driven mission.
-* Pre-execution file baselines are captured for invariant checking.
-* The agent is treated as a precision executor.
+### 2. Strategic Reasoning (The Brain)
+Uses Gemini (e.g., `gemini-2.0-flash`) to analyze the codebase and generate a **Mission Contract**:
+*   **Objectives & Non-goals:** Clear boundaries for the agent.
+*   **Machine-Verifiable Success Criteria:** Commands like `pytest`, `coverage: 80`, or `exists: path/to/file`.
+*   **Expert Auditor Pass:** A second-pass validation ensures the mission is testable and safe before execution.
 
----
+### 3. Autonomous Execution (The Muscle)
+Launches your preferred agent (Aider, Gemini-CLI, Mentat, etc.) as a subprocess. The agent is treated as a precision executor of the Mission Contract.
 
-### Phase D: Verification & Recovery (The Control Loop)
-
-After execution:
-
-1. **Success Verification**: Criteria are run automatically and results are normalized into structured, machine-readable forms. Supports:
-   * `pytest` & `ruff`: Semantic and linting checks.
-   * `coverage: <min_percent>`: Enforces minimum test coverage.
-   * `eval: <python_snippet>`: Custom state verification via Python one-liners.
-   * `no_new_files`: Invariant enforcement.
-   * `no_clobber`: Protects specific files from modification (defined in project config).
-   * `exists: <path>`: File/directory existence.
-   * `contains: <path> <regex>`: Content validation.
-2. **Automatic State Rollback**: If verification fails and `--rollback` is enabled, the system automatically performs a `git reset --hard` to the pre-execution HEAD. This ensures the next recovery attempt starts from a clean slate rather than a "half-baked" or broken state.
-3. **Change Summarization**: Generates a human-readable summary of all filesystem changes using `git diff`.
-4. **Classification & Memory**: If checks fail, the failure is classified (LOGIC, TOOLING, etc.). The recovery engine generates a **"Lessons Learned"** summary that is persisted to `.chillvibe_logs.jsonl`.
-5. **Targeted Bounded Recovery**: A recovery strategy is generated, incorporating **historical failure memory** (top 3 lessons from similar past failures) and the detailed verification results. The loop is explicitly bounded to prevent unproductive retries or repeated failure modes.
-
-This loop converts retries from blind restarts into informed adaptation.
+### 4. Verification & Recovery (The Safety Net)
+*   **Verification:** Runs the success criteria. If any fail, the mission is marked as failed.
+*   **Rollback:** If `--rollback` is enabled, the codebase is reverted to the pre-mission state to prevent "corrupted state" loops.
+*   **Memory-Aware Recovery:** The system analyzes the failure, classifies it, and generates a new strategy based on historical "Lessons Learned."
 
 ---
 
-## 📊 Competitive Positioning
+## 📊 Competitive Landscape
 
-| System         | Success Detection      | Recovery Quality          | Determinism | Model Lock-in | Expected Task Reliability |
-| -------------- | ---------------------- | ------------------------- | ----------- | ------------- | ------------------------- |
-| Claude Code    | Human judgment         | Manual                    | Low–Medium  | Yes           | High, high variance       |
-| Codex Agent    | Partial (tests)        | Blind retry               | Medium      | Yes           | High, brittle             |
-| Cursor Agent   | Implicit               | Manual                    | Low         | Yes           | Medium–High               |
-| Devin          | Scripted               | Weak                      | Medium      | Yes           | Medium                    |
-| **chill-vibe** | **Machine-verifiable** | **Targeted control loop** | **High**    | **No**        | **High, low variance**    |
-
-chill-vibe does not replace better models—it **multiplies their reliability**.
+| Feature | Cursor / Claude Code | Aider (Standalone) | **chill-vibe** |
+| :--- | :--- | :--- | :--- |
+| **Success Detection** | Human "Vibes" | Manual Testing | **Machine-Verifiable** |
+| **Failure Recovery** | Manual Undo | Blind Retry | **Classified & Grounded** |
+| **State Management** | Manual | Git Commits | **Auto-Rollback on Failure** |
+| **Context Strategy** | RAG / Map | Repository Map | **Full-Repo git-dump** |
+| **Model Lock-in** | Yes | No | **No** |
 
 ---
 
 ## 🛠 Installation
 
 ```bash
-git clone <repo-url> chill-vibe
+# Clone the repository
+git clone https://github.com/youruser/chill-vibe.git
 cd chill-vibe
-pip install .
-export GEMINI_API_KEY='your-google-api-key'
+
+# Run the setup script (creates venv and installs dependencies)
+./setup.sh
+
+# Set your API Key
+export GEMINI_API_KEY='your-api-key-here'
 ```
 
 ---
 
 ## 📖 Usage
 
+### Basic Command
 ```bash
-chill-vibe [path_to_repo] [options]
+chill-vibe /path/to/your/repo --agent aider --retry --rollback
 ```
 
 ### Key Options
-
-* `--agent` – Execution agent (`gemini-cli`, `aider`, `qwen`, `mentat`, `gpt-me`)
-* `--thinking` – Reasoning depth for planning (`HIGH` default)
-* `--model` – Gemini model for planning
-* `--dry-run` – Generate mission without executing
-* `--retry` – Enable structured recovery loop
-* `--rollback` – Enable automatic git rollback on verification failure
-* `--history` – View mission logs
-* `--doctor` – Environment diagnostics
+*   `--agent`: Choose your executor (`aider`, `gemini-cli`, `qwen`, `mentat`).
+*   `--thinking`: Set reasoning depth (`LOW`, `MEDIUM`, `HIGH`).
+*   `--retry`: Enable the structured recovery loop.
+*   `--rollback`: Automatically `git reset` if verification fails.
+*   `--doctor`: Run diagnostics on your environment and agents.
+*   `--history`: View the log of past missions and failure classifications.
 
 ---
 
-## 📝 Mission Logging
+## ⚙️ Configuration
 
-All missions are logged to `.chillvibe_logs.jsonl`, including:
+You can customize `chill-vibe` per project by creating a `.chillvibe.yaml` file in your repo root:
 
-* generated mission contracts
-* success criteria
-* failure classifications
-* recovery strategies
+```yaml
+model: "gemini-2.0-pro-exp-02-05"
+thinking_level: "HIGH"
 
-This enables auditability, debugging, and reproducibility—features absent in most agent workflows.
+# Files the agent is NEVER allowed to change
+protected_files:
+  - "src/auth/crypto.py"
+  - "config/production.yaml"
 
----
+# Custom agent arguments
+extra_args:
+  - "--no-auto-commit"
 
-## 💡 When to Use chill-vibe
-
-Best suited for:
-
-* Medium-to-large repositories
-* Cross-cutting architectural changes
-* Poorly documented codebases
-* Long-running autonomous tasks
-
-Not optimized for:
-
-* Single-file edits
-* Trivial changes
-* Interactive pair-programming
+exclude_patterns:
+  - "**/tests/data/**"
+```
 
 ---
 
-## 🧠 Philosophy
+## 📝 Mission Logging & Memory
 
-Autonomous coding doesn’t fail because models are weak.
+Every mission is logged to `.chillvibe_logs.jsonl`. This file isn't just for show—it's the system's **Memory**. 
 
-It fails because **success is implicit, retries are blind, and responsibility is fuzzy**.
-
-chill-vibe fixes that—by turning autonomous coding into a control system instead of a guessing game.
+When a mission fails with a `LOGIC` error, `chill-vibe` searches this log for the top 3 most relevant "Lessons Learned" from previous logic failures and feeds them into the recovery prompt. This prevents the agent from making the same mistake twice.
 
 ---
 
-## 📄 License
+## ⚖️ License
 
-See `LICENSE` for details.
+MIT License. See `LICENSE` for details. 
+
+*Built for developers who want autonomous coding to feel like a control system, not a slot machine.* 🎧
