@@ -1,19 +1,19 @@
 # chill-vibe 🎧
 
-**chill-vibe** is a CLI tool that orchestrates a high-leverage "Reasoning-to-Code" pipeline. It bridges the gap between deep architectural analysis and autonomous execution by using Gemini's reasoning capabilities to analyze a codebase and then handing off a tailored mission to a coding agent.
+**chill-vibe** is a CLI tool that orchestrates a high-leverage "Reasoning-to-Code" pipeline. It solves the critical problem of context starvation in autonomous coding agents by using Gemini's reasoning capabilities to analyze an entire codebase and generate a precise, tailored mission statement—transforming a generic agent into a highly effective, project-specific executor.
 
 ## 🚀 The Workflow
 
 The tool operates in three distinct phases:
 
 ### Phase A: Context Extraction (The "Eyes")
-Uses `git-dump` to aggregate the entire codebase into a single, LLM-friendly context file (`codebase_context.txt`). This ensures the "Brain" has a complete view of the project's structure, patterns, and logic.
+Uses `git-dump` to aggregate the entire codebase into a single, LLM-friendly context file (`codebase_context.txt`). This ensures the "Brain" has a complete, unfiltered view of the project's structure, patterns, dependencies, and logic—eliminating the blind spots that plague standard agent workflows.
 
 ### Phase B: Strategic Reasoning (The "Brain")
 Initializes the `google-genai` SDK using `gemini-3-flash-preview`.
-- **Analysis:** Gemini critically analyzes the codebase and assigns it a "grade."
-- **Strategy:** It identifies high-level goals and success metrics.
-- **Mission:** It generates a highly specific, comprehensive prompt designed for a coding agent to execute the required work autonomously.
+- **Analysis:** Gemini critically analyzes the codebase, identifying architecture, style, and hidden constraints.
+- **Strategy:** It defines clear, measurable goals and success criteria for the task at hand.
+- **Mission:** It generates a highly specific, self-contained prompt designed *exclusively* for the downstream agent, embedding all necessary context. This is not a generic instruction—it is a project-specific blueprint.
 
 ### Phase C: Autonomous Execution (The "Muscle")
 Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subprocess.
@@ -62,6 +62,10 @@ Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subp
 - **git-dump:** Expected to be in `../git_dump` or available in your `PATH`.
 - **google-genai:** Latest Python SDK for Gemini.
 - **gemini-cli:** `npx @google/gemini-cli` must be available if using the default agent.
+
+## 💡 Why This Matters
+
+Generic coding agents, given vague prompts and no codebase context, often produce incorrect, inconsistent, or architecturally unsound code—they are effectively working blindfolded. `chill-vibe` eliminates this fundamental flaw. By providing a comprehensive, project-specific mission, it shifts the agent's role from a general-purpose guesser to a precision executor. This isn't an incremental improvement—it's a qualitative leap that makes complex, system-level autonomous coding feasible for the first time.
 
 ## 📄 License
 Refer to the `LICENSE` file for details.
