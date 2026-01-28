@@ -12,15 +12,14 @@ Uses `git-dump` to aggregate the entire codebase into a single, LLM-friendly con
 ### Phase B: Strategic Reasoning (The "Brain")
 Initializes the `google-genai` SDK using `gemini-3-flash-preview`.
 - **Analysis:** Gemini critically analyzes the codebase, identifying architecture, style, and hidden constraints.
-- **Strategy:** It defines clear, measurable goals and success criteria for the task at hand.
-- **Mission:** It generates a highly specific, self-contained prompt designed *exclusively* for the downstream agent, embedding all necessary context. This is not a generic instruction—it is a project-specific blueprint.
+- **Mission:** It generates a highly specific, **checklist-driven**, and **deterministic** agent prompt. By eliminating vague instructions, `chill-vibe` ensures the agent operates with low-entropy, high-precision guidance.
+- **Success Criteria:** It defines objective, **machine-verifiable success criteria** (shell commands, file checks, or invariants) that must pass for the mission to be considered successful.
 
 ### Phase C: Autonomous Execution (The "Muscle")
 Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subprocess.
 - **Handoff:** The strategic prompt from Phase B is automatically piped into the agent's input stream.
-- **YOLO Mode:** For `gemini-cli`, it uses the `--yolo` flag to streamline operations.
-- **Interactivity:** Unlike standard pipes, `chill-vibe` maintains a direct connection to your terminal, allowing you to monitor progress and provide manual input.
-- **Recovery Strategy (Feedback Loop):** If an agent fails (non-zero exit code), `chill-vibe` can capture the failure output and send it back to Gemini to generate a refined "Recovery Strategy" and retry the mission automatically.
+- **Verification:** After the agent completes its task, `chill-vibe` automatically runs the mission's success criteria. If the criteria fail (even if the agent exited with code 0), the mission is marked as a failure.
+- **Structured Recovery (Control Loop):** If an agent fails or success criteria are not met, `chill-vibe` performs **failure classification** (`TOOLING`, `LOGIC`, `ENVIRONMENT`, `AMBIGUITY`). It then generates a targeted recovery strategy specifically designed for that failure class and retries the mission.
 
 ## 🛠 Installation
 
@@ -77,9 +76,12 @@ If `extra_args` is provided, they will be appended to the coding agent's base co
 
 ## 📝 Mission Logging
 
-`chill-vibe` automatically logs every mission strategy to a hidden file named `.chillvibe_logs.jsonl` in the current working directory. Each entry contains:
+`chill-vibe` automatically logs every mission strategy to a hidden file named `.chillvibe_logs.jsonl` in the current working directory. Use `chill-vibe --history` to view a formatted table of past missions. Each entry contains:
 - `timestamp`: When the mission was generated.
 - `model_id`: The Gemini model used for reasoning.
+- `status`: Result of the mission (`COMPLETED`, `FAILED`, `INTERRUPTED`).
+- `classification`: If the mission failed, the category of failure (e.g., `LOGIC`, `TOOLING`).
+- `success_criteria`: The machine-verifiable checks generated for the mission.
 - `agent_prompt`: The full strategic prompt sent to the coding agent.
 
 ## 🛡️ Robustness

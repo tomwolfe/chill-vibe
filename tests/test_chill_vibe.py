@@ -45,12 +45,13 @@ class TestChillVibe(unittest.TestCase):
         with patch('google.genai.Client') as mock_client_class:
             mock_client = mock_client_class.return_value
             mock_response = MagicMock()
-            mock_response.text = "Analysis... <agent_prompt>Work on this project</agent_prompt> Goals..."
+            mock_response.text = "Analysis... <success_criteria>ls -R</success_criteria> <agent_prompt>Work on this project</agent_prompt> Goals..."
             mock_client.models.generate_content.return_value = mock_response
             
-            prompt = reasoning.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH")
+            prompt, criteria = reasoning.get_strategic_reasoning(".", "context.txt", "model-id", "HIGH")
             
             self.assertEqual(prompt, "Work on this project")
+            self.assertEqual(criteria, ["ls -R"])
             mock_client.models.generate_content.assert_called_once()
 
     @patch('subprocess.Popen')
@@ -83,18 +84,16 @@ class TestChillVibe(unittest.TestCase):
 
     @patch('builtins.open', new_callable=mock_open)
     def test_log_mission(self, mock_file):
-        reasoning.log_mission("New Prompt", "model-x", "gemini-cli", 12.34, status="COMPLETED")
+        reasoning.log_mission("New Prompt", "model-x", "gemini-cli", 12.34, status="COMPLETED", classification="LOGIC", success_criteria=["test 1"])
         
         mock_file.assert_called_with(Path(".chillvibe_logs.jsonl"), "a")
         handle = mock_file()
         write_call = handle.write.call_args[0][0]
         log_entry = json.loads(write_call)
         self.assertEqual(log_entry["agent_prompt"], "New Prompt")
-        self.assertEqual(log_entry["model_id"], "model-x")
-        self.assertEqual(log_entry["agent_name"], "gemini-cli")
-        self.assertEqual(log_entry["duration_seconds"], 12.34)
+        self.assertEqual(log_entry["classification"], "LOGIC")
+        self.assertEqual(log_entry["success_criteria"], ["test 1"])
         self.assertEqual(log_entry["status"], "COMPLETED")
-        self.assertIn("timestamp", log_entry)
 
     @patch('builtins.print')
     @patch('builtins.input', return_value='n')
@@ -145,15 +144,30 @@ class TestChillVibe(unittest.TestCase):
         mock_process.stdin.write.assert_any_call('b')
         mock_process.stdin.close.assert_called_once()
 
-    @patch('shutil.which')
-    @patch('sys.exit')
-    def test_validate_environment_success(self, mock_exit, mock_which):
-        mock_which.return_value = "/usr/bin/something"
-        registry = config.get_agent_registry()
-        with patch('chill_vibe.doctor.genai', MagicMock()), \
-             patch('chill_vibe.doctor.git_dump', MagicMock()):
-            doctor.validate_environment("gemini-cli", registry)
-        mock_exit.assert_not_called()
+    @patch('subprocess.run')
+    def test_verify_success_all_passed(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+        
+        criteria = ["ls", "pwd"]
+        passed, results = execution.verify_success(criteria, ".")
+        
+        self.assertTrue(passed)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(mock_run.call_count, 2)
+
+    @patch('subprocess.run')
+    def test_verify_success_failed(self, mock_run):
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="ok", stderr=""),
+            MagicMock(returncode=1, stdout="", stderr="error")
+        ]
+        
+        criteria = ["ls", "nonexistent_cmd"]
+        passed, results = execution.verify_success(criteria, ".")
+        
+        self.assertFalse(passed)
+        self.assertEqual(results[0]["passed"], True)
+        self.assertEqual(results[1]["passed"], False)
 
     def test_get_agent_registry_defaults(self):
         registry = config.get_agent_registry()

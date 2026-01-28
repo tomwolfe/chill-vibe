@@ -146,3 +146,46 @@ def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
         agent.extra_args = config_data["extra_args"]
         
     return agent.run(agent_prompt)
+
+def verify_success(success_criteria, repo_path):
+    """Run machine-verifiable success criteria (shell commands)."""
+    if not success_criteria:
+        return True, []
+
+    print("\n[*] Verifying success criteria...")
+    results = []
+    all_passed = True
+    
+    for cmd in success_criteria:
+        print(f"[*] Running check: {cmd}")
+        try:
+            # Run the command in the repo directory
+            process = subprocess.run(
+                cmd,
+                shell=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True
+            )
+            passed = (process.returncode == 0)
+            results.append({
+                "command": cmd,
+                "passed": passed,
+                "stdout": process.stdout,
+                "stderr": process.stderr
+            })
+            if passed:
+                print(f"    [✓] Passed")
+            else:
+                print(f"    [✗] Failed (exit code {process.returncode})")
+                all_passed = False
+        except Exception as e:
+            print(f"    [!] Error running check: {e}")
+            results.append({
+                "command": cmd,
+                "passed": False,
+                "error": str(e)
+            })
+            all_passed = False
+            
+    return all_passed, results

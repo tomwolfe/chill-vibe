@@ -8,7 +8,7 @@ from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, get_recovery_strategy
-from .execution import run_coding_agent
+from .execution import run_coding_agent, verify_success
 
 def get_parser(registry):
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
@@ -107,37 +107,68 @@ def main():
         
         # Phase B: Strategic Reasoning
         start_time = time.time()
-        agent_prompt = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
+        agent_prompt, success_criteria = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
         duration = time.time() - start_time
         
         if args.dry_run:
-            log_mission(agent_prompt, args.model, args.agent, duration, status="DRY_RUN", exit_code=0)
+            log_mission(agent_prompt, args.model, args.agent, duration, status="DRY_RUN", exit_code=0, success_criteria=success_criteria)
             print("\n--- GENERATED AGENT PROMPT ---")
             print(agent_prompt)
+            print("\n--- SUCCESS CRITERIA ---")
+            for sc in success_criteria:
+                print(f"- {sc}")
             print("------------------------------")
         else:
             # Phase C: Autonomous Execution
             exit_code = run_coding_agent(args.agent, agent_prompt, registry, config_data)
             
-            # Retry mechanism
+            # Machine-verifiable success check
+            success_passed = True
+            if exit_code == 0:
+                success_passed, verification_results = verify_success(success_criteria, args.path)
+                if not success_passed:
+                    print("[!] Agent finished with exit code 0, but success criteria failed.")
+                    exit_code = 1 # Force failure if criteria not met
+
+            # Structured Recovery Loop
+            classification = None
             if exit_code != 0 and exit_code != 130 and args.retry:
-                print(f"\n[!] Agent {args.agent} failed with exit code {exit_code}. Attempting recovery...")
+                print(f"\n[!] Mission failed (exit code {exit_code}). Entering structured recovery...")
+                
+                # Classify and recover
                 agent = registry[args.agent]
                 failure_output = "".join(list(agent.last_output))
-                recovery_prompt = get_recovery_strategy(args.path, args.model, agent_prompt, failure_output, config_data)
+                recovery_prompt, classification = get_recovery_strategy(args.path, args.model, agent_prompt, failure_output, config_data)
+                
+                print(f"[*] Failure classification: {classification}")
                 
                 if recovery_prompt:
-                    print("[*] Running recovery strategy...")
+                    print(f"[*] Applying recovery strategy (Category: {classification})...")
                     exit_code = run_coding_agent(args.agent, recovery_prompt, registry, config_data)
                     agent_prompt = recovery_prompt # Update for logging
+                    
+                    # Verify again after recovery
+                    if exit_code == 0:
+                        success_passed, _ = verify_success(success_criteria, args.path)
+                        if not success_passed:
+                            exit_code = 1
                 else:
                     print("[!] Failed to generate recovery strategy.")
 
             status = "COMPLETED" if exit_code == 0 else "FAILED"
             if exit_code == 130:
                 status = "INTERRUPTED"
-                
-            log_mission(agent_prompt, args.model, args.agent, duration, status=status, exit_code=exit_code)
+            
+            log_mission(
+                agent_prompt, 
+                args.model, 
+                args.agent, 
+                duration, 
+                status=status, 
+                exit_code=exit_code,
+                classification=classification,
+                success_criteria=success_criteria
+            )
     finally:
         if args.cleanup and os.path.exists(args.context_file):
             print(f"[*] Cleaning up context file: {args.context_file}")
