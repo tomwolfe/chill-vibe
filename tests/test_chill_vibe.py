@@ -133,6 +133,7 @@ class TestChillVibe(unittest.TestCase):
     def test_forward_stdin(self):
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
+        mock_process.poll.side_effect = [None, None, None, 0]
         
         with patch('sys.stdin.read', side_effect=['a', 'b', '']), \
              patch('sys.stdin.isatty', return_value=False):

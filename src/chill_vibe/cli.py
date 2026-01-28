@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from . import __version__
-from .config import get_agent_registry, load_config, get_global_config
+from .config import get_agent_registry, load_config, get_global_config, init_project
 from .constants import DEFAULT_MODEL
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
@@ -32,6 +32,8 @@ def get_parser(registry):
     parser.add_argument("--exclude", help="Comma-separated list of glob patterns to ignore during context extraction")
     parser.add_argument("--doctor", action="store_true",
                         help="Run a diagnostic check on the environment and agents")
+    parser.add_argument("--init", action="store_true",
+                        help="Initialize a default .chillvibe.yaml in the current directory")
     parser.add_argument("--history", action="store_true",
                         help="Show mission history")
     parser.add_argument("--version", action="version", version=f"chill-vibe v{__version__}")
@@ -69,6 +71,10 @@ def main():
 
     if args.doctor:
         run_doctor(registry)
+        sys.exit(0)
+
+    if args.init:
+        init_project(args.path or ".")
         sys.exit(0)
 
     if not args.path:

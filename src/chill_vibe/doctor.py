@@ -24,6 +24,26 @@ def install_package(package_name):
         print(f"[✗] Failed to install {package_name}: {e}")
         return False
 
+def check_api_connectivity(api_key):
+    """Verify that the Gemini API key is functional."""
+    if not genai:
+        return False, "google-genai not installed"
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        # Using a very simple model and prompt to minimize latency/cost
+        # We use flash here as it is fast and cheap for connectivity check
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents="Say 'connected'",
+            config={"max_output_tokens": 5}
+        )
+        if response.text:
+            return True, "Connected successfully"
+    except Exception as e:
+        return False, f"Connection failed: {str(e)}"
+    return False, "Unknown error"
+
 def run_doctor(registry):
     """Check environment and dependencies."""
     print("--- chill-vibe Doctor Report ---")
@@ -33,6 +53,12 @@ def run_doctor(registry):
     if api_key:
         if api_key.startswith("AIza"):
             print(f"[✓] GEMINI_API_KEY: Set and valid format ({api_key[:4]}...{api_key[-4:]})")
+            print("[*] Verifying API connectivity...")
+            success, msg = check_api_connectivity(api_key)
+            if success:
+                print(f"[✓] API Connectivity: {msg}")
+            else:
+                print(f"[✗] API Connectivity: {msg}")
         else:
             print(f"[✗] GEMINI_API_KEY: Set but invalid format (should start with 'AIza')")
     else:

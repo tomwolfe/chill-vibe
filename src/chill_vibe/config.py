@@ -44,6 +44,7 @@ def load_config(repo_path):
 
 def get_agent_registry(repo_path=None):
     """Load and merge agent configurations from defaults, global, and local files."""
+    # Start with default agents
     registry = {name: CodingAgent(name, **cfg) for name, cfg in DEFAULT_AGENTS.items()}
     
     # 1. Load global config: ~/.chillvibe/agents.yaml
@@ -52,12 +53,20 @@ def get_agent_registry(repo_path=None):
         try:
             with open(global_config_path, "r") as f:
                 global_data = yaml.safe_load(f)
-                if global_data and isinstance(global_data, dict):
-                    # Check for agents key or assume top-level is agents if it doesn't look like a config with keys
-                    agents_data = global_data.get("agents", global_data)
+                if isinstance(global_data, dict):
+                    # If there's an 'agents' key, use it. Otherwise, if it's a flat dict of agents, use that.
+                    # We check if any of the keys match DEFAULT_AGENTS or have a 'command' key to guess.
+                    agents_data = global_data.get("agents")
+                    if agents_data is None:
+                        # Heuristic: if it looks like a flat dict of agent configs
+                        is_flat_agents = any(isinstance(v, dict) and "command" in v for v in global_data.values())
+                        if is_flat_agents:
+                            agents_data = global_data
+
                     if isinstance(agents_data, dict):
                         for name, cfg in agents_data.items():
-                            if name != "default_model": # Skip the special key if at top level
+                            if isinstance(cfg, dict) and "command" in cfg:
+                                # This completely overrides the default agent if name matches
                                 registry[name] = CodingAgent(name, **cfg)
         except Exception as e:
             print(f"[!] Warning: Could not parse global agent config: {e}")
@@ -65,11 +74,12 @@ def get_agent_registry(repo_path=None):
     # 2. Load local config: .chillvibe.yaml (under 'agents' key)
     if repo_path:
         local_config = load_config(repo_path)
-        if local_config and "agents" in local_config:
+        if isinstance(local_config, dict) and "agents" in local_config:
             local_agents = local_config["agents"]
             if isinstance(local_agents, dict):
                 for name, cfg in local_agents.items():
-                    registry[name] = CodingAgent(name, **cfg)
+                    if isinstance(cfg, dict) and "command" in cfg:
+                        registry[name] = CodingAgent(name, **cfg)
                     
     return registry
 
@@ -95,3 +105,35 @@ def get_default_model():
     """Fetch default model from global config or return standard default."""
     global_config = get_global_config()
     return global_config.get("default_model", DEFAULT_MODEL)
+
+def init_project(repo_path):
+    """Create a default .chillvibe.yaml in the current directory."""
+    config_path = Path(repo_path) / ".chillvibe.yaml"
+    if config_path.exists():
+        print(f"[!] Configuration file already exists at {config_path}")
+        return False
+
+    default_config = """# chill-vibe project configuration
+# thinking_level: HIGH
+# model: gemini-2.0-pro-exp-02-05
+
+# extra_args: 
+#   - "--some-flag"
+
+# exclude_patterns:
+#   - "**/logs/**"
+#   - "temp_*.py"
+
+# agents:
+#   custom-agent:
+#     command: ["my-agent", "--fast"]
+#     dependencies: ["my-agent"]
+"""
+    try:
+        with open(config_path, "w") as f:
+            f.write(default_config)
+        print(f"[*] Created default configuration at {config_path}")
+        return True
+    except Exception as e:
+        print(f"[!] Failed to create configuration: {e}")
+        return False

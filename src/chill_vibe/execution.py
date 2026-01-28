@@ -6,6 +6,7 @@ import threading
 import tty
 import termios
 
+import time
 import collections
 import contextlib
 
@@ -21,6 +22,7 @@ def raw_mode(file):
         tty.setraw(fd)
         yield
     finally:
+        # Restore terminal settings regardless of what happens
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 def forward_stdin(process):
@@ -28,16 +30,23 @@ def forward_stdin(process):
     log_file = os.path.join(os.getcwd(), ".chillvibe_debug.log")
     try:
         with raw_mode(sys.stdin):
-            while True:
+            while process.poll() is None:
                 try:
+                    # Using a small timeout or non-blocking read would be better, 
+                    # but simple blocking read(1) is usually okay if it breaks on EOF.
+                    # We add a tiny sleep if we're in a tight loop somehow.
                     char = sys.stdin.read(1)
                     if not char:
-                        break
+                        # On some systems, read(1) might return empty if no input is available
+                        # even if it's supposed to block.
+                        time.sleep(0.01)
+                        continue
                     process.stdin.write(char)
                     process.stdin.flush()
                 except (EOFError, BrokenPipeError):
-                    # These are common when the process ends
                     break
+                except Exception:
+                    time.sleep(0.01)
     except Exception as e:
         try:
             with open(log_file, "a") as f:
