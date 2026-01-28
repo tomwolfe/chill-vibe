@@ -17,14 +17,24 @@ try:
     from google import genai
     from google.genai import types
 except ImportError:
-    print("Error: google-genai SDK not found. Please run 'pip install google-genai'.")
-    sys.exit(1)
+    genai = None
+    types = None
 
 try:
     import git_dump
 except ImportError:
-    print("Error: git-dump not found. Please run './setup.sh' to install dependencies.")
-    sys.exit(1)
+    git_dump = None
+
+def install_package(package_name):
+    """Attempt to install a python package using the current interpreter."""
+    print(f"[*] Attempting to install {package_name}...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+        print(f"[✓] Successfully installed {package_name}")
+        return True
+    except Exception as e:
+        print(f"[✗] Failed to install {package_name}: {e}")
+        return False
 
 class CodingAgent:
     """Represents a coding agent that can be executed."""
@@ -64,7 +74,7 @@ class CodingAgent:
         threading.Thread(target=forward_stdin, args=(process,), daemon=True).start()
         
         try:
-            process.wait()
+            return process.wait()
         except KeyboardInterrupt:
             print(f"\n[*] chill-vibe: Terminating {self.name}...")
             process.terminate()
@@ -72,6 +82,7 @@ class CodingAgent:
                 process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 process.kill()
+            return 130 # Standard exit code for SIGINT
 
 DEFAULT_AGENTS = {
     "gemini-cli": {
@@ -131,7 +142,7 @@ def load_config(repo_path):
                 print(f"[!] Warning: Could not parse project config: {e}")
     return {}
 
-def log_mission(agent_prompt, model_id, agent_name, duration):
+def log_mission(agent_prompt, model_id, agent_name, duration, status="UNKNOWN"):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
@@ -139,6 +150,7 @@ def log_mission(agent_prompt, model_id, agent_name, duration):
         "model_id": model_id,
         "agent_name": agent_name,
         "duration_seconds": round(duration, 2),
+        "status": status,
         "agent_prompt": agent_prompt
     }
     try:
@@ -149,6 +161,14 @@ def log_mission(agent_prompt, model_id, agent_name, duration):
 
 def validate_environment(agent_name, registry):
     """Pre-flight check for dependencies"""
+    if not genai:
+        print("Error: google-genai SDK not found. Please run 'pip install google-genai'.")
+        sys.exit(1)
+    
+    if not git_dump:
+        print("Error: git-dump not found. Please run './setup.sh' to install dependencies.")
+        sys.exit(1)
+
     if agent_name not in registry:
         print(f"Error: Unknown agent '{agent_name}'. Available: {', '.join(registry.keys())}")
         sys.exit(1)
@@ -344,7 +364,7 @@ def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
     if config_data and "extra_args" in config_data:
         agent.extra_args = config_data["extra_args"]
         
-    agent.run(agent_prompt)
+    return agent.run(agent_prompt)
 
 def run_doctor(registry):
     """Check environment and dependencies."""
@@ -357,14 +377,30 @@ def run_doctor(registry):
     else:
         print("[✗] GEMINI_API_KEY: Not set (Phase B reasoning will fail)")
 
-    # 2. Check git
+    # 2. Check google-genai
+    if genai:
+        print("[✓] google-genai: Installed")
+    else:
+        print("[✗] google-genai: Not installed")
+        if input("[?] Would you like to attempt to install google-genai? (y/n): ").lower() == 'y':
+            install_package("google-genai")
+
+    # 3. Check git-dump
+    if git_dump:
+        print("[✓] git-dump: Installed")
+    else:
+        print("[✗] git-dump: Not installed")
+        if input("[?] Would you like to attempt to install git-dump? (y/n): ").lower() == 'y':
+            install_package("git+https://github.com/tomwolfe/git_dump.git")
+
+    # 4. Check git
     if shutil.which("git"):
         git_version = subprocess.check_output(["git", "--version"], text=True).strip()
         print(f"[✓] git: Installed ({git_version})")
     else:
         print("[✗] git: Not installed (Context extraction may be limited)")
 
-    # 3. Check Agents
+    # 5. Check Agents
     print("\nAgent Availability:")
     for name, agent in registry.items():
         missing = agent.validate()
@@ -372,6 +408,12 @@ def run_doctor(registry):
             print(f"  [✓] {name}: Available")
         else:
             print(f"  [✗] {name}: Missing dependencies ({', '.join(missing)})")
+            if input(f"  [?] Would you like to attempt to install missing dependencies for {name}? (y/n): ").lower() == 'y':
+                for dep in missing:
+                    if dep in ["aider", "qwen"]:
+                        install_package(dep)
+                    else:
+                        print(f"  [!] Don't know how to automatically install '{dep}'. Please install it manually.")
     
     print("-" * 32)
 
@@ -427,6 +469,9 @@ def main():
     exclude_patterns = config_data.get("exclude_patterns", [])
     run_git_dump(args.path, args.context_file, exclude_patterns, args.depth, args.include_ext)
     
+    if args.model == "flash":
+        args.model = "gemini-3-flash-preview"
+
     try:
         if args.dry_run:
             print("\n[*] Dry-run mode: Context extracted.")
@@ -437,16 +482,20 @@ def main():
         agent_prompt = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
         duration = time.time() - start_time
         
-        # Log the mission
-        log_mission(agent_prompt, args.model, args.agent, duration)
-        
         if args.dry_run:
+            log_mission(agent_prompt, args.model, args.agent, duration, status="DRY_RUN")
             print("\n--- GENERATED AGENT PROMPT ---")
             print(agent_prompt)
             print("------------------------------")
         else:
             # Phase C: Autonomous Execution
-            run_coding_agent(args.agent, agent_prompt, registry, config_data)
+            exit_code = run_coding_agent(args.agent, agent_prompt, registry, config_data)
+            
+            status = "COMPLETED" if exit_code == 0 else "FAILED"
+            if exit_code == 130:
+                status = "INTERRUPTED"
+                
+            log_mission(agent_prompt, args.model, args.agent, duration, status=status)
     finally:
         if args.cleanup and os.path.exists(args.context_file):
             print(f"[*] Cleaning up context file: {args.context_file}")
