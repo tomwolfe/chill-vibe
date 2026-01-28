@@ -14,6 +14,8 @@ sys.modules["google.genai"] = mock_genai
 sys.modules["google.genai.types"] = MagicMock()
 mock_git_dump = MagicMock()
 sys.modules["git_dump"] = mock_git_dump
+sys.modules["git_dump.core"] = MagicMock()
+mock_git_dump_core = sys.modules["git_dump.core"]
 
 spec = importlib.util.spec_from_file_location(module_name, file_path)
 chill_vibe = importlib.util.module_from_spec(spec)
@@ -22,10 +24,11 @@ spec.loader.exec_module(chill_vibe)
 
 class TestChillVibe(unittest.TestCase):
 
-    @patch('chill_vibe.git_dump.dump')
-    def test_run_git_dump_success(self, mock_dump):
-        chill_vibe.run_git_dump("repo/path", "output.txt")
-        mock_dump.assert_called_once_with("repo/path", "output.txt")
+    def test_run_git_dump_success(self):
+        with patch('git_dump.core.RepoProcessor') as mock_processor_class:
+            chill_vibe.run_git_dump("repo/path", "output.txt")
+            mock_processor_class.assert_called_once_with("repo/path", "output.txt")
+            mock_processor_class.return_value.process.assert_called_once()
 
     @patch('builtins.open', new_callable=mock_open, read_data="code context")
     @patch('os.path.exists')
@@ -101,6 +104,58 @@ class TestChillVibe(unittest.TestCase):
         mock_process.stdin.write.assert_any_call('a')
         mock_process.stdin.write.assert_any_call('b')
         mock_process.stdin.close.assert_called_once()
+
+    @patch('shutil.which')
+    @patch('sys.exit')
+    def test_validate_environment_success(self, mock_exit, mock_which):
+        mock_which.return_value = "/usr/bin/something"
+        chill_vibe.validate_environment("gemini-cli")
+        mock_exit.assert_not_called()
+
+    @patch('shutil.which')
+    @patch('sys.exit')
+    def test_validate_environment_failure(self, mock_exit, mock_which):
+        mock_which.return_value = None
+        chill_vibe.validate_environment("gemini-cli")
+        mock_exit.assert_called_with(1)
+
+    @patch('builtins.open', new_callable=mock_open, read_data="code context")
+    @patch('os.path.exists')
+    @patch('builtins.print')
+    @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
+    def test_get_strategic_reasoning_verbose(self, mock_print, mock_exists, mock_file):
+        mock_exists.return_value = True
+        
+        with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
+            mock_client = mock_client_class.return_value
+            mock_response = MagicMock()
+            
+            # Mocking the nested structure for thoughts
+            mock_part = MagicMock()
+            mock_part.thought = True
+            mock_part.text = "I am thinking"
+            
+            mock_candidate = MagicMock()
+            mock_candidate.content.parts = [mock_part]
+            
+            mock_response.candidates = [mock_candidate]
+            mock_response.text = "Analysis... <agent_prompt>Work</agent_prompt>"
+            mock_client.models.generate_content.return_value = mock_response
+            
+            # Need to mock types.GenerateContentConfig and types.ThinkingConfig
+            with patch('chill_vibe.types.GenerateContentConfig') as mock_config, \
+                 patch('chill_vibe.types.ThinkingConfig') as mock_thinking_config:
+                
+                chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH", verbose=True)
+                
+                # Check if thinking budget was passed to ThinkingConfig
+                mock_thinking_config.assert_called_once()
+                args, kwargs = mock_thinking_config.call_args
+                self.assertEqual(kwargs['thinking_budget'], 16384)
+            
+            # Check if thoughts were printed
+            mock_print.assert_any_call("\n--- INTERNAL THOUGHTS ---")
+            mock_print.assert_any_call("\033[2mI am thinking\033[0m")
 
 if __name__ == '__main__':
     unittest.main()

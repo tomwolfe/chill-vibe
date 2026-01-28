@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -19,16 +20,40 @@ except ImportError:
     print("Error: git-dump not found. Please run './setup.sh' to install dependencies.")
     sys.exit(1)
 
+def validate_environment(agent_name):
+    """Pre-flight check for dependencies"""
+    dependencies = ["git"]
+    if agent_name == "gemini-cli":
+        dependencies.append("npx")
+    elif agent_name == "qwen":
+        dependencies.append("qwen")
+    
+    # Also check for the chill-vibe script dependencies implicitly by being here, 
+    # but let's check for git-dump's underlying tool if it has one? 
+    # git-dump is a python module, but we can check if git is present.
+    
+    missing = []
+    for dep in dependencies:
+        if not shutil.which(dep):
+            missing.append(dep)
+            
+    if missing:
+        print(f"Error: Missing required dependencies: {', '.join(missing)}")
+        print("Please install them and try again.")
+        sys.exit(1)
+
 def run_git_dump(repo_path, output_file):
     """Phase A: Context Extraction"""
     print(f"[*] Extracting codebase context from {repo_path}...")
     try:
-        git_dump.dump(repo_path, output_file)
+        from git_dump.core import RepoProcessor
+        processor = RepoProcessor(repo_path, output_file)
+        processor.process()
     except Exception as e:
         print(f"Error running git-dump: {e}")
         sys.exit(1)
 
-def get_strategic_reasoning(context_file, model_id, thinking_level):
+def get_strategic_reasoning(context_file, model_id, thinking_level, verbose=False):
     """Phase B: Strategic Reasoning"""
     if not os.path.exists(context_file):
         print(f"Error: {context_file} not found.")
@@ -61,10 +86,20 @@ def get_strategic_reasoning(context_file, model_id, thinking_level):
     
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
     
-    # Mapping thinking level to budget if applicable, 
-    # though currently include_thoughts is the main switch.
+    # Task 1: Map thinking level to budget
+    budgets = {
+        "LOW": 2048,
+        "MEDIUM": 8192,
+        "HIGH": 16384
+    }
+    budget = budgets.get(thinking_level.upper(), 16384)
+
+    # Update config with thinking budget
     config = types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(include_thoughts=True)
+        thinking_config=types.ThinkingConfig(
+            include_thoughts=True,
+            thinking_budget=budget
+        )
     )
     
     try:
@@ -77,6 +112,20 @@ def get_strategic_reasoning(context_file, model_id, thinking_level):
         print(f"Error calling Gemini API: {e}")
         sys.exit(1)
     
+    # Task 2: Verbose Reasoning Output
+    if verbose:
+        # According to google-genai SDK, thoughts are in the candidate's parts
+        try:
+            for candidate in response.candidates:
+                for part in candidate.content.parts:
+                    if part.thought:
+                        print("\n--- INTERNAL THOUGHTS ---")
+                        # Using ANSI dimmed style if possible, or just a header
+                        print(f"\033[2m{part.text}\033[0m")
+                        print("-------------------------\n")
+        except AttributeError:
+            pass # No thoughts found or different SDK version structure
+
     full_text = response.text
     
     # Extract the portion intended for the agent
@@ -160,8 +209,13 @@ def main():
                         help="Model ID (default: gemini-3-flash-preview)")
     parser.add_argument("--dry-run", action="store_true", 
                         help="Output the context and the reasoning prompt without invoking the coding agent")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Print the model's internal thinking/reasoning")
     
     args = parser.parse_args()
+    
+    # Pre-flight checks
+    validate_environment(args.agent)
     
     # Phase A: Context Extraction
     context_file = "codebase_context.txt"
@@ -172,7 +226,7 @@ def main():
         # We still run Phase B to show what the prompt WOULD be
     
     # Phase B: Strategic Reasoning
-    agent_prompt = get_strategic_reasoning(context_file, args.model, args.thinking)
+    agent_prompt = get_strategic_reasoning(context_file, args.model, args.thinking, args.verbose)
     
     if args.dry_run:
         print("\n--- GENERATED AGENT PROMPT ---")

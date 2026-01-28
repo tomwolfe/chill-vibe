@@ -1,0 +1,538 @@
+--- REPOSITORY STRUCTURE ---
+chill-vibe/
+│   ├── tests/
+│   │   ├── tests/__init__.py
+│       ├── tests/test_chill_vibe.py
+│   ├── chill-vibe.py
+│   ├── codebase_context.txt
+│   ├── LICENSE
+│   ├── README.md
+│   ├── requirements.txt
+├── setup.sh
+--- END REPOSITORY STRUCTURE ---
+--- FILE: LICENSE ---
+MIT License
+
+Copyright (c) 2026 Thomas Wolfe
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+--- END FILE ---
+--- FILE: README.md ---
+# chill-vibe 🎧
+
+**chill-vibe** is a CLI tool that orchestrates a high-leverage "Reasoning-to-Code" pipeline. It solves the critical problem of context starvation in autonomous coding agents by using Gemini's reasoning capabilities to analyze an entire codebase and generate a precise, tailored mission statement—transforming a generic agent into a highly effective, project-specific executor.
+
+## 🚀 The Workflow
+
+The tool operates in three distinct phases:
+
+### Phase A: Context Extraction (The "Eyes")
+Uses `git-dump` to aggregate the entire codebase into a single, LLM-friendly context file (`codebase_context.txt`). This ensures the "Brain" has a complete, unfiltered view of the project's structure, patterns, dependencies, and logic—eliminating the blind spots that plague standard agent workflows.
+
+### Phase B: Strategic Reasoning (The "Brain")
+Initializes the `google-genai` SDK using `gemini-3-flash-preview`.
+- **Analysis:** Gemini critically analyzes the codebase, identifying architecture, style, and hidden constraints.
+- **Strategy:** It defines clear, measurable goals and success criteria for the task at hand.
+- **Mission:** It generates a highly specific, self-contained prompt designed *exclusively* for the downstream agent, embedding all necessary context. This is not a generic instruction—it is a project-specific blueprint.
+
+### Phase C: Autonomous Execution (The "Muscle")
+Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subprocess.
+- **Handoff:** The strategic prompt from Phase B is automatically piped into the agent's input stream.
+- **YOLO Mode:** For `gemini-cli`, it uses the `--yolo` flag to streamline operations.
+- **Interactivity:** Unlike standard pipes, `chill-vibe` maintains a direct connection to your terminal, allowing you to monitor progress and provide manual input (e.g., "keep trying" or handling rate limits) while the agent works.
+
+## 🛠 Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repo-url> chill-vibe
+   cd chill-vibe
+   ```
+
+2. **Run the setup script:**
+   This will install required Python packages (`google-genai`, `pathspec`) and set permissions.
+   ```bash
+   ./setup.sh
+   ```
+
+3. **Configure your API Key:**
+   ```bash
+   export GEMINI_API_KEY='your-google-api-key'
+   ```
+
+## 📖 Usage
+
+```bash
+./chill-vibe.py [path_to_repo] [options]
+```
+
+### Arguments:
+- `path`: The directory of the repository you want to analyze and modify.
+- `--agent`: Choice of coding agent: `gemini-cli` (default) or `qwen`.
+- `--thinking`: Thinking level for Gemini reasoning: `HIGH` (default), `MEDIUM`, or `LOW`.
+- `--model`: The Gemini model ID (default: `gemini-3-flash-preview`).
+- `--dry-run`: Extracts context and generates the strategic prompt without launching the coding agent.
+
+### Example:
+```bash
+./chill-vibe.py ../my-project --agent gemini-cli --thinking HIGH
+```
+
+## 🧰 Dependencies
+- **git-dump:** Installed automatically via `requirements.txt`.
+- **google-genai:** Latest Python SDK for Gemini.
+- **gemini-cli:** `npx @google/gemini-cli` must be available if using the default agent.
+
+## 💡 Why This Matters
+
+Generic coding agents, given vague prompts and no codebase context, often produce incorrect, inconsistent, or architecturally unsound code—they are effectively working blindfolded. `chill-vibe` eliminates this fundamental flaw. By providing a comprehensive, project-specific mission, it shifts the agent's role from a general-purpose guesser to a precision executor. This isn't an incremental improvement—it's a qualitative leap that makes complex, system-level autonomous coding feasible for the first time.
+
+## 📄 License
+Refer to the `LICENSE` file for details.
+--- END FILE ---
+--- FILE: chill-vibe.py ---
+#!/usr/bin/env python3
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    print("Error: google-genai SDK not found. Please run 'pip install google-genai'.")
+    sys.exit(1)
+
+try:
+    import git_dump
+except ImportError:
+    print("Error: git-dump not found. Please run './setup.sh' to install dependencies.")
+    sys.exit(1)
+
+def validate_environment(agent_name):
+    """Pre-flight check for dependencies"""
+    dependencies = ["git"]
+    if agent_name == "gemini-cli":
+        dependencies.append("npx")
+    elif agent_name == "qwen":
+        dependencies.append("qwen")
+    
+    # Also check for the chill-vibe script dependencies implicitly by being here, 
+    # but let's check for git-dump's underlying tool if it has one? 
+    # git-dump is a python module, but we can check if git is present.
+    
+    missing = []
+    for dep in dependencies:
+        if not shutil.which(dep):
+            missing.append(dep)
+            
+    if missing:
+        print(f"Error: Missing required dependencies: {', '.join(missing)}")
+        print("Please install them and try again.")
+        sys.exit(1)
+
+def run_git_dump(repo_path, output_file):
+    """Phase A: Context Extraction"""
+    print(f"[*] Extracting codebase context from {repo_path}...")
+    try:
+        from git_dump.core import RepoProcessor
+        processor = RepoProcessor(repo_path, output_file)
+        processor.process()
+    except Exception as e:
+        print(f"Error running git-dump: {e}")
+        sys.exit(1)
+
+def get_strategic_reasoning(context_file, model_id, thinking_level, verbose=False):
+    """Phase B: Strategic Reasoning"""
+    if not os.path.exists(context_file):
+        print(f"Error: {context_file} not found.")
+        sys.exit(1)
+        
+    with open(context_file, "r") as f:
+        codebase_context = f.read()
+
+    # The API key should be in the environment variable GEMINI_API_KEY
+    if not os.environ.get("GEMINI_API_KEY"):
+        print("Warning: GEMINI_API_KEY environment variable not set.")
+
+    client = genai.Client()
+    
+    preamble = (
+        "Critically analyze this project (attached), then give it a grade. "
+        "I would like a prompt to give a coding agent to have the agent autonomously work on the attached codebase to achieve its goals for the project. "
+        "Before you give the prompt, what should the goals be for the agent and how will the agent know it has reached those goals?"
+    )
+    
+    # We add a clear delimiter to extract the agent prompt later
+    full_prompt = (
+        f"{preamble}\n\n"
+        "--- INSTRUCTIONS FOR YOUR RESPONSE ---\n"
+        "1. Provide your analysis, grade, and goals first.\n"
+        "2. Provide the final prompt for the coding agent in a single block wrapped in <agent_prompt> tags.\n"
+        "3. Ensure the agent prompt is comprehensive and self-contained.\n\n"
+        f"--- CODEBASE CONTEXT ---\n{codebase_context}"
+    )
+    
+    print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
+    
+    # Task 1: Map thinking level to budget
+    budgets = {
+        "LOW": 2048,
+        "MEDIUM": 8192,
+        "HIGH": 16384
+    }
+    budget = budgets.get(thinking_level.upper(), 16384)
+
+    # Update config with thinking budget
+    config = types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(
+            include_thoughts=True,
+            thinking_budget=budget
+        )
+    )
+    
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=full_prompt,
+            config=config
+        )
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        sys.exit(1)
+    
+    # Task 2: Verbose Reasoning Output
+    if verbose:
+        # According to google-genai SDK, thoughts are in the candidate's parts
+        try:
+            for candidate in response.candidates:
+                for part in candidate.content.parts:
+                    if part.thought:
+                        print("\n--- INTERNAL THOUGHTS ---")
+                        # Using ANSI dimmed style if possible, or just a header
+                        print(f"\033[2m{part.text}\033[0m")
+                        print("-------------------------\n")
+        except AttributeError:
+            pass # No thoughts found or different SDK version structure
+
+    full_text = response.text
+    
+    # Extract the portion intended for the agent
+    if "<agent_prompt>" in full_text and "</agent_prompt>" in full_text:
+        agent_prompt = full_text.split("<agent_prompt>")[1].split("</agent_prompt>")[0].strip()
+    else:
+        # Fallback if tags are missing: look for common delimiters or just use the last portion
+        print("[!] Warning: Could not find <agent_prompt> tags in response. Using full response.")
+        agent_prompt = full_text
+        
+    return agent_prompt
+
+def forward_stdin(process):
+    """Thread function to forward system stdin to the subprocess stdin."""
+    try:
+        while True:
+            # Read one character at a time to remain responsive
+            char = sys.stdin.read(1)
+            if not char:
+                break
+            process.stdin.write(char)
+            process.stdin.flush()
+    except Exception:
+        pass
+    finally:
+        try:
+            process.stdin.close()
+        except:
+            pass
+
+def run_coding_agent(agent_name, agent_prompt):
+    """Phase C: Autonomous Execution"""
+    if agent_name == "gemini-cli":
+        # Using npx to run the gemini-cli
+        cmd = ["npx", "@google/gemini-cli", "--yolo"]
+    elif agent_name == "qwen":
+        cmd = ["qwen"]
+    else:
+        print(f"Unknown agent: {agent_name}")
+        sys.exit(1)
+    
+    print(f"[*] Launching {agent_name} in autonomous mode...")
+    
+    # Launch with a pipe for stdin so we can inject the prompt,
+    # then hand over to the user.
+    process = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        text=True,
+        bufsize=1
+    )
+    
+    # 1. Pipe the initial agent prompt
+    process.stdin.write(agent_prompt + "\n")
+    process.stdin.flush()
+    
+    # 2. Start a background thread to forward user input to the agent
+    # This allows the user to interact (e.g., "keep trying", Ctrl+C, etc.)
+    threading.Thread(target=forward_stdin, args=(process,), daemon=True).start()
+    
+    try:
+        process.wait()
+    except KeyboardInterrupt:
+        print("\n[*] chill-vibe: Terminating agent...")
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+def main():
+    parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
+    parser.add_argument("path", help="The directory of the repo to analyze")
+    parser.add_argument("--agent", choices=["gemini-cli", "qwen"], default="gemini-cli", 
+                        help="Choice of coding agent (default: gemini-cli)")
+    parser.add_argument("--thinking", default="HIGH", 
+                        help="Thinking level (default: HIGH)")
+    parser.add_argument("--model", default="gemini-3-flash-preview", 
+                        help="Model ID (default: gemini-3-flash-preview)")
+    parser.add_argument("--dry-run", action="store_true", 
+                        help="Output the context and the reasoning prompt without invoking the coding agent")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Print the model's internal thinking/reasoning")
+    
+    args = parser.parse_args()
+    
+    # Pre-flight checks
+    validate_environment(args.agent)
+    
+    # Phase A: Context Extraction
+    context_file = "codebase_context.txt"
+    run_git_dump(args.path, context_file)
+    
+    if args.dry_run:
+        print("\n[*] Dry-run mode: Context extracted.")
+        # We still run Phase B to show what the prompt WOULD be
+    
+    # Phase B: Strategic Reasoning
+    agent_prompt = get_strategic_reasoning(context_file, args.model, args.thinking, args.verbose)
+    
+    if args.dry_run:
+        print("\n--- GENERATED AGENT PROMPT ---")
+        print(agent_prompt)
+        print("------------------------------")
+        return
+
+    # Phase C: Autonomous Execution
+    run_coding_agent(args.agent, agent_prompt)
+
+if __name__ == "__main__":
+    main()
+--- END FILE ---
+--- FILE: requirements.txt ---
+google-genai
+pathspec
+git+https://github.com/tomwolfe/git_dump.git
+--- END FILE ---
+--- FILE: setup.sh ---
+#!/bin/bash
+set -e
+
+echo "[*] chill-vibe: Setting up environment..."
+
+# 1. Install Python dependencies
+if [ -f "requirements.txt" ]; then
+    echo "[*] Installing Python dependencies from requirements.txt..."
+    pip install -r requirements.txt
+else
+    echo "[*] requirements.txt not found. Installing google-genai manually..."
+    pip install google-genai
+fi
+
+# 2. Make chill-vibe.py executable
+chmod +x chill-vibe.py
+
+echo "[*] Setup complete. Use ./chill-vibe.py [path] to start the pipeline."
+--- END FILE ---
+--- FILE: tests/__init__.py ---
+--- END FILE ---
+--- FILE: tests/test_chill_vibe.py ---
+import unittest
+from unittest.mock import patch, MagicMock, mock_open
+import os
+import sys
+import importlib.util
+
+# Load chill-vibe.py as a module
+file_path = os.path.abspath("chill-vibe.py")
+module_name = "chill_vibe"
+
+# Mock the genai and git_dump imports before executing the module
+mock_genai = MagicMock()
+sys.modules["google.genai"] = mock_genai
+sys.modules["google.genai.types"] = MagicMock()
+mock_git_dump = MagicMock()
+sys.modules["git_dump"] = mock_git_dump
+
+spec = importlib.util.spec_from_file_location(module_name, file_path)
+chill_vibe = importlib.util.module_from_spec(spec)
+sys.modules[module_name] = chill_vibe
+spec.loader.exec_module(chill_vibe)
+
+class TestChillVibe(unittest.TestCase):
+
+    @patch('chill_vibe.git_dump.dump')
+    def test_run_git_dump_success(self, mock_dump):
+        chill_vibe.run_git_dump("repo/path", "output.txt")
+        mock_dump.assert_called_once_with("repo/path", "output.txt")
+
+    @patch('builtins.open', new_callable=mock_open, read_data="code context")
+    @patch('os.path.exists')
+    @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
+    def test_get_strategic_reasoning_success(self, mock_exists, mock_file):
+        mock_exists.return_value = True
+        
+        # Patch the Client directly in the chill_vibe module
+        with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
+            mock_client = mock_client_class.return_value
+            mock_response = MagicMock()
+            mock_response.text = "Analysis... <agent_prompt>Work on this project</agent_prompt> Goals..."
+            mock_client.models.generate_content.return_value = mock_response
+            
+            prompt = chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH")
+            
+            self.assertEqual(prompt, "Work on this project")
+            mock_client.models.generate_content.assert_called_once()
+
+    @patch('builtins.open', new_callable=mock_open, read_data="code context")
+    @patch('os.path.exists')
+    @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
+    def test_get_strategic_reasoning_no_tags(self, mock_exists, mock_file):
+        mock_exists.return_value = True
+        
+        with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
+            mock_client = mock_client_class.return_value
+            mock_response = MagicMock()
+            mock_response.text = "Full response without tags"
+            mock_client.models.generate_content.return_value = mock_response
+            
+            prompt = chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH")
+            
+            self.assertEqual(prompt, "Full response without tags")
+
+    @patch('subprocess.Popen')
+    @patch('threading.Thread')
+    def test_run_coding_agent_gemini(self, mock_thread, mock_popen):
+        mock_process = MagicMock()
+        mock_popen.return_value = mock_process
+        mock_process.stdin = MagicMock()
+        
+        chill_vibe.run_coding_agent("gemini-cli", "Start mission")
+        
+        args, kwargs = mock_popen.call_args
+        self.assertIn("npx", args[0])
+        self.assertIn("@google/gemini-cli", args[0])
+        self.assertIn("--yolo", args[0])
+        mock_process.stdin.write.assert_called_with("Start mission\n")
+
+    @patch('subprocess.Popen')
+    @patch('threading.Thread')
+    def test_run_coding_agent_qwen(self, mock_thread, mock_popen):
+        mock_process = MagicMock()
+        mock_popen.return_value = mock_process
+        mock_process.stdin = MagicMock()
+        
+        chill_vibe.run_coding_agent("qwen", "Start mission")
+        
+        args, kwargs = mock_popen.call_args
+        self.assertIn("qwen", args[0])
+
+    def test_forward_stdin(self):
+        mock_process = MagicMock()
+        mock_process.stdin = MagicMock()
+        
+        # Mock sys.stdin.read to return a string then an empty string to break the loop
+        with patch('sys.stdin.read', side_effect=['a', 'b', '']):
+            chill_vibe.forward_stdin(mock_process)
+            
+        # Check if characters were written to process stdin
+        self.assertEqual(mock_process.stdin.write.call_count, 2)
+        mock_process.stdin.write.assert_any_call('a')
+        mock_process.stdin.write.assert_any_call('b')
+        mock_process.stdin.close.assert_called_once()
+
+    @patch('shutil.which')
+    @patch('sys.exit')
+    def test_validate_environment_success(self, mock_exit, mock_which):
+        mock_which.return_value = "/usr/bin/something"
+        chill_vibe.validate_environment("gemini-cli")
+        mock_exit.assert_not_called()
+
+    @patch('shutil.which')
+    @patch('sys.exit')
+    def test_validate_environment_failure(self, mock_exit, mock_which):
+        mock_which.return_value = None
+        chill_vibe.validate_environment("gemini-cli")
+        mock_exit.assert_called_with(1)
+
+    @patch('builtins.open', new_callable=mock_open, read_data="code context")
+    @patch('os.path.exists')
+    @patch('builtins.print')
+    @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
+    def test_get_strategic_reasoning_verbose(self, mock_print, mock_exists, mock_file):
+        mock_exists.return_value = True
+        
+        with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
+            mock_client = mock_client_class.return_value
+            mock_response = MagicMock()
+            
+            # Mocking the nested structure for thoughts
+            mock_part = MagicMock()
+            mock_part.thought = True
+            mock_part.text = "I am thinking"
+            
+            mock_candidate = MagicMock()
+            mock_candidate.content.parts = [mock_part]
+            
+            mock_response.candidates = [mock_candidate]
+            mock_response.text = "Analysis... <agent_prompt>Work</agent_prompt>"
+            mock_client.models.generate_content.return_value = mock_response
+            
+            # Need to mock types.GenerateContentConfig and types.ThinkingConfig
+            with patch('chill_vibe.types.GenerateContentConfig') as mock_config, \
+                 patch('chill_vibe.types.ThinkingConfig') as mock_thinking_config:
+                
+                chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH", verbose=True)
+                
+                # Check if thinking budget was passed to ThinkingConfig
+                mock_thinking_config.assert_called_once()
+                args, kwargs = mock_thinking_config.call_args
+                self.assertEqual(kwargs['include_thoughts_budget_tokens'], 16384)
+            
+            # Check if thoughts were printed
+            mock_print.assert_any_call("\n--- INTERNAL THOUGHTS ---")
+            mock_print.assert_any_call("\033[2mI am thinking\033[0m")
+
+if __name__ == '__main__':
+    unittest.main()
+--- END FILE ---
