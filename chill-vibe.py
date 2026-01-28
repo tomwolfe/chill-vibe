@@ -71,23 +71,47 @@ class CodingAgent:
             except subprocess.TimeoutExpired:
                 process.kill()
 
-AGENT_REGISTRY = {
-    "gemini-cli": CodingAgent(
-        name="gemini-cli",
-        command=["npx", "@google/gemini-cli", "--yolo"],
-        dependencies=["npx"]
-    ),
-    "qwen": CodingAgent(
-        name="qwen",
-        command=["qwen"],
-        dependencies=["qwen"]
-    ),
-    "aider": CodingAgent(
-        name="aider",
-        command=["aider", "--architect"],
-        dependencies=["aider"]
-    )
+DEFAULT_AGENTS = {
+    "gemini-cli": {
+        "command": ["npx", "@google/gemini-cli", "--yolo"],
+        "dependencies": ["npx"]
+    },
+    "qwen": {
+        "command": ["qwen"],
+        "dependencies": ["qwen"]
+    },
+    "aider": {
+        "command": ["aider", "--architect"],
+        "dependencies": ["aider"]
+    }
 }
+
+def get_agent_registry(repo_path=None):
+    """Load and merge agent configurations from defaults, global, and local files."""
+    registry = {name: CodingAgent(name, **cfg) for name, cfg in DEFAULT_AGENTS.items()}
+    
+    # 1. Load global config: ~/.chillvibe/agents.yaml
+    global_config_path = Path.home() / ".chillvibe" / "agents.yaml"
+    if global_config_path.exists():
+        try:
+            with open(global_config_path, "r") as f:
+                global_agents = yaml.safe_load(f)
+                if global_agents and isinstance(global_agents, dict):
+                    for name, cfg in global_agents.items():
+                        registry[name] = CodingAgent(name, **cfg)
+        except Exception as e:
+            print(f"[!] Warning: Could not parse global agent config: {e}")
+
+    # 2. Load local config: .chillvibe.yaml (under 'agents' key)
+    if repo_path:
+        local_config = load_config(repo_path)
+        if local_config and "agents" in local_config:
+            local_agents = local_config["agents"]
+            if isinstance(local_agents, dict):
+                for name, cfg in local_agents.items():
+                    registry[name] = CodingAgent(name, **cfg)
+                    
+    return registry
 
 def load_config(repo_path):
     """Load project configuration from .chillvibe.json or .chillvibe.yaml/.yml."""
@@ -119,13 +143,13 @@ def log_mission(agent_prompt, model_id):
     except Exception as e:
         print(f"[!] Warning: Could not write to log file: {e}")
 
-def validate_environment(agent_name):
+def validate_environment(agent_name, registry):
     """Pre-flight check for dependencies"""
-    if agent_name not in AGENT_REGISTRY:
-        print(f"Error: Unknown agent '{agent_name}'")
+    if agent_name not in registry:
+        print(f"Error: Unknown agent '{agent_name}'. Available: {', '.join(registry.keys())}")
         sys.exit(1)
         
-    agent = AGENT_REGISTRY[agent_name]
+    agent = registry[agent_name]
     missing = agent.validate()
             
     if not shutil.which("git"):
@@ -136,7 +160,7 @@ def validate_environment(agent_name):
         print("Please install them and try again.")
         sys.exit(1)
 
-def run_git_dump(repo_path, output_file):
+def run_git_dump(repo_path, output_file, exclude_patterns=None):
     """Phase A: Context Extraction"""
     repo_path_obj = Path(repo_path)
     git_dir = repo_path_obj / ".git"
@@ -147,7 +171,7 @@ def run_git_dump(repo_path, output_file):
     print(f"[*] Extracting codebase context from {repo_path}...")
     try:
         from git_dump.core import RepoProcessor
-        processor = RepoProcessor(str(repo_path_obj), output_file)
+        processor = RepoProcessor(str(repo_path_obj), output_file, ignore_patterns=exclude_patterns)
         processor.process()
     except Exception as e:
         print(f"Error running git-dump: {e}")
@@ -208,14 +232,33 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
         )
     )
     
-    try:
-        response = client.models.generate_content(
-            model=model_id,
-            contents=full_prompt,
-            config=config
-        )
-    except Exception as e:
-        print(f"Error calling Gemini API: {e}")
+    max_retries = 3
+    retry_delay = 5
+    response = None
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=model_id,
+                contents=full_prompt,
+                config=config
+            )
+            break
+        except Exception as e:
+            # Check for common transient errors in the error message if possible
+            error_str = str(e).lower()
+            is_transient = any(code in error_str for code in ["429", "500", "503", "quota", "internal error"])
+            
+            if is_transient and attempt < max_retries - 1:
+                print(f"[!] API error (attempt {attempt+1}/{max_retries}): {e}. Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+                retry_delay *= 2
+            else:
+                print(f"Error calling Gemini API: {e}")
+                sys.exit(1)
+    
+    if not response:
+        print("Error: No response from Gemini API.")
         sys.exit(1)
     
     # Task 2: Verbose Reasoning Output
@@ -265,23 +308,23 @@ def forward_stdin(process):
         except:
             pass
 
-def run_coding_agent(agent_name, agent_prompt, config_data=None):
+def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
     """Phase C: Autonomous Execution"""
-    if agent_name not in AGENT_REGISTRY:
+    if agent_name not in registry:
         print(f"Unknown agent: {agent_name}")
         sys.exit(1)
     
-    agent = AGENT_REGISTRY[agent_name]
+    agent = registry[agent_name]
     if config_data and "extra_args" in config_data:
         agent.extra_args = config_data["extra_args"]
         
     agent.run(agent_prompt)
 
-def get_parser():
+def get_parser(registry):
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
     parser.add_argument("path", nargs="?", help="The directory of the repo to analyze")
-    parser.add_argument("--agent", choices=list(AGENT_REGISTRY.keys()), default="gemini-cli", 
-                        help="Choice of coding agent (default: gemini-cli)")
+    parser.add_argument("--agent", default="gemini-cli", 
+                        help=f"Choice of coding agent (default: gemini-cli). Available: {', '.join(registry.keys())}")
     parser.add_argument("--thinking", default="HIGH", 
                         help="Thinking level (default: HIGH)")
     parser.add_argument("--model", default="gemini-3-flash-preview", 
@@ -298,21 +341,28 @@ def get_parser():
     return parser
 
 def main():
-    parser = get_parser()
+    # Load registry (pass None initially to get defaults and global)
+    registry = get_agent_registry()
+    
+    parser = get_parser(registry)
     args = parser.parse_args()
 
     if not args.path:
         parser.print_help()
         sys.exit(0)
     
+    # Reload registry with local path if available
+    registry = get_agent_registry(args.path)
+    
     # Pre-flight checks
-    validate_environment(args.agent)
+    validate_environment(args.agent, registry)
     
     # Load project config
     config_data = load_config(args.path)
     
     # Phase A: Context Extraction
-    run_git_dump(args.path, args.context_file)
+    exclude_patterns = config_data.get("exclude_patterns", [])
+    run_git_dump(args.path, args.context_file, exclude_patterns)
     
     try:
         if args.dry_run:
@@ -331,7 +381,7 @@ def main():
             print("------------------------------")
         else:
             # Phase C: Autonomous Execution
-            run_coding_agent(args.agent, agent_prompt, config_data)
+            run_coding_agent(args.agent, agent_prompt, registry, config_data)
     finally:
         if args.cleanup and os.path.exists(args.context_file):
             print(f"[*] Cleaning up context file: {args.context_file}")

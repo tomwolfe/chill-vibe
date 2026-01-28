@@ -31,8 +31,8 @@ class TestChillVibe(unittest.TestCase):
         with patch('git_dump.core.RepoProcessor') as mock_processor_class, \
              patch('pathlib.Path.exists', return_value=True), \
              patch('pathlib.Path.is_dir', return_value=True):
-            chill_vibe.run_git_dump("repo/path", "output.txt")
-            mock_processor_class.assert_called_once_with("repo/path", "output.txt")
+            chill_vibe.run_git_dump("repo/path", "output.txt", ["*.log"])
+            mock_processor_class.assert_called_once_with("repo/path", "output.txt", ignore_patterns=["*.log"])
             mock_processor_class.return_value.process.assert_called_once()
 
     def test_run_git_dump_non_git(self):
@@ -41,7 +41,7 @@ class TestChillVibe(unittest.TestCase):
              patch('builtins.print') as mock_print:
             chill_vibe.run_git_dump("repo/path", "output.txt")
             mock_print.assert_any_call("[!] Warning: repo/path is not a valid git repository. Falling back to standard folder processing.")
-            mock_processor_class.assert_called_once_with("repo/path", "output.txt")
+            mock_processor_class.assert_called_once_with("repo/path", "output.txt", ignore_patterns=None)
 
     @patch('builtins.open', new_callable=mock_open, read_data="code context")
     @patch('os.path.exists')
@@ -67,8 +67,9 @@ class TestChillVibe(unittest.TestCase):
         mock_popen.return_value = mock_process
         mock_process.stdin = MagicMock()
         
+        registry = chill_vibe.get_agent_registry()
         config_data = {"extra_args": ["--no-auto-commit", "--verbose"]}
-        chill_vibe.run_coding_agent("gemini-cli", "Start mission", config_data)
+        chill_vibe.run_coding_agent("gemini-cli", "Start mission", registry, config_data)
         
         args, kwargs = mock_popen.call_args
         command = args[0]
@@ -114,8 +115,31 @@ class TestChillVibe(unittest.TestCase):
     @patch('sys.exit')
     def test_validate_environment_success(self, mock_exit, mock_which):
         mock_which.return_value = "/usr/bin/something"
-        chill_vibe.validate_environment("gemini-cli")
+        registry = chill_vibe.get_agent_registry()
+        chill_vibe.validate_environment("gemini-cli", registry)
         mock_exit.assert_not_called()
+
+    def test_get_agent_registry_defaults(self):
+        registry = chill_vibe.get_agent_registry()
+        self.assertIn("gemini-cli", registry)
+        self.assertIn("aider", registry)
+        self.assertEqual(registry["gemini-cli"].command, ["npx", "@google/gemini-cli", "--yolo"])
+
+    @patch('chill_vibe.load_config')
+    @patch('chill_vibe.Path.exists')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('yaml.safe_load')
+    def test_get_agent_registry_merging(self, mock_yaml, mock_file, mock_exists, mock_load_config):
+        mock_exists.return_value = True
+        mock_load_config.return_value = {"agents": {"custom-local": {"command": ["local-cmd"]}}}
+        mock_yaml.return_value = {"custom-global": {"command": ["global-cmd"]}}
+        
+        registry = chill_vibe.get_agent_registry(repo_path=".")
+        self.assertIn("custom-global", registry)
+        self.assertIn("custom-local", registry)
+        self.assertIn("gemini-cli", registry)
+        self.assertEqual(registry["custom-global"].command, ["global-cmd"])
+        self.assertEqual(registry["custom-local"].command, ["local-cmd"])
 
 if __name__ == '__main__':
     unittest.main()

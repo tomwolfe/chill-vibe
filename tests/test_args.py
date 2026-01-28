@@ -21,7 +21,8 @@ spec.loader.exec_module(chill_vibe)
 
 class TestArgs(unittest.TestCase):
     def test_default_args(self):
-        parser = chill_vibe.get_parser()
+        registry = chill_vibe.get_agent_registry()
+        parser = chill_vibe.get_parser(registry)
         args = parser.parse_args(['.'])
         self.assertEqual(args.path, '.')
         self.assertEqual(args.context_file, 'codebase_context.txt')
@@ -29,17 +30,20 @@ class TestArgs(unittest.TestCase):
         self.assertFalse(args.dry_run)
 
     def test_custom_context_file(self):
-        parser = chill_vibe.get_parser()
+        registry = chill_vibe.get_agent_registry()
+        parser = chill_vibe.get_parser(registry)
         args = parser.parse_args(['.', '--context-file', 'custom.txt'])
         self.assertEqual(args.context_file, 'custom.txt')
 
     def test_cleanup_flag(self):
-        parser = chill_vibe.get_parser()
+        registry = chill_vibe.get_agent_registry()
+        parser = chill_vibe.get_parser(registry)
         args = parser.parse_args(['.', '--cleanup'])
         self.assertTrue(args.cleanup)
 
     def test_dry_run_flag(self):
-        parser = chill_vibe.get_parser()
+        registry = chill_vibe.get_agent_registry()
+        parser = chill_vibe.get_parser(registry)
         args = parser.parse_args(['.', '--dry-run'])
         self.assertTrue(args.dry_run)
 
