@@ -13,33 +13,18 @@ except ImportError:
     print("Error: google-genai SDK not found. Please run 'pip install google-genai'.")
     sys.exit(1)
 
+try:
+    import git_dump
+except ImportError:
+    print("Error: git-dump not found. Please run './setup.sh' to install dependencies.")
+    sys.exit(1)
+
 def run_git_dump(repo_path, output_file):
     """Phase A: Context Extraction"""
-    # Resolve the path to the local git_dump tool
-    git_dump_script = os.path.abspath(os.path.join("..", "git_dump", "git_dump.py"))
-    
-    # Try to find git-dump in PATH, then fallback to the local script
-    git_dump_cmd = "git-dump"
-    try:
-        subprocess.run([git_dump_cmd, "--version"], capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        if os.path.exists(git_dump_script):
-            # If it's a python script, use the current python interpreter
-            git_dump_cmd = git_dump_script
-        else:
-            print(f"Error: git-dump not found in PATH and {git_dump_script} does not exist.")
-            sys.exit(1)
-            
-    cmd = [git_dump_cmd, repo_path, "-o", output_file]
-    
-    # If using the script directly and it's python, it might need 'python' prefix if not executable
-    if git_dump_cmd == git_dump_script:
-        cmd = [sys.executable, git_dump_script, repo_path, "-o", output_file]
-
     print(f"[*] Extracting codebase context from {repo_path}...")
     try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
+        git_dump.dump(repo_path, output_file)
+    except Exception as e:
         print(f"Error running git-dump: {e}")
         sys.exit(1)
 

@@ -1,2 +1,3 @@
 google-genai
 pathspec
+git+https://github.com/tomwolfe/git_dump.git

@@ -59,7 +59,7 @@ Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subp
 ```
 
 ## 🧰 Dependencies
-- **git-dump:** Expected to be in `../git_dump` or available in your `PATH`.
+- **git-dump:** Installed automatically via `requirements.txt`.
 - **google-genai:** Latest Python SDK for Gemini.
 - **gemini-cli:** `npx @google/gemini-cli` must be available if using the default agent.
 

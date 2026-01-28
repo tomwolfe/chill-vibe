@@ -8,25 +8,24 @@ import importlib.util
 file_path = os.path.abspath("chill-vibe.py")
 module_name = "chill_vibe"
 
-# Mock the genai import before executing the module
+# Mock the genai and git_dump imports before executing the module
 mock_genai = MagicMock()
 sys.modules["google.genai"] = mock_genai
 sys.modules["google.genai.types"] = MagicMock()
+mock_git_dump = MagicMock()
+sys.modules["git_dump"] = mock_git_dump
 
 spec = importlib.util.spec_from_file_location(module_name, file_path)
 chill_vibe = importlib.util.module_from_spec(spec)
+sys.modules[module_name] = chill_vibe
 spec.loader.exec_module(chill_vibe)
 
 class TestChillVibe(unittest.TestCase):
 
-    @patch('subprocess.run')
-    @patch('os.path.exists')
-    def test_run_git_dump_success(self, mock_exists, mock_run):
-        mock_exists.return_value = True
-        mock_run.return_value = MagicMock(returncode=0)
-        
+    @patch('chill_vibe.git_dump.dump')
+    def test_run_git_dump_success(self, mock_dump):
         chill_vibe.run_git_dump("repo/path", "output.txt")
-        self.assertTrue(mock_run.called)
+        mock_dump.assert_called_once_with("repo/path", "output.txt")
 
     @patch('builtins.open', new_callable=mock_open, read_data="code context")
     @patch('os.path.exists')
