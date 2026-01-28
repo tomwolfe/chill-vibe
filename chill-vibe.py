@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -128,9 +129,10 @@ def get_strategic_reasoning(context_file, model_id, thinking_level, verbose=Fals
 
     full_text = response.text
     
-    # Extract the portion intended for the agent
-    if "<agent_prompt>" in full_text and "</agent_prompt>" in full_text:
-        agent_prompt = full_text.split("<agent_prompt>")[1].split("</agent_prompt>")[0].strip()
+    # Extract the portion intended for the agent using regex to be more flexible
+    match = re.search(r"<agent_prompt>(.*?)</agent_prompt>", full_text, re.DOTALL)
+    if match:
+        agent_prompt = match.group(1).strip()
     else:
         # Fallback if tags are missing: look for common delimiters or just use the last portion
         print("[!] Warning: Could not find <agent_prompt> tags in response. Using full response.")
@@ -198,9 +200,9 @@ def run_coding_agent(agent_name, agent_prompt):
         except subprocess.TimeoutExpired:
             process.kill()
 
-def main():
+def get_parser():
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
-    parser.add_argument("path", help="The directory of the repo to analyze")
+    parser.add_argument("path", nargs="?", help="The directory of the repo to analyze")
     parser.add_argument("--agent", choices=["gemini-cli", "qwen"], default="gemini-cli", 
                         help="Choice of coding agent (default: gemini-cli)")
     parser.add_argument("--thinking", default="HIGH", 
@@ -211,31 +213,46 @@ def main():
                         help="Output the context and the reasoning prompt without invoking the coding agent")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Print the model's internal thinking/reasoning")
-    
+    parser.add_argument("--context-file", default="codebase_context.txt",
+                        help="The file to store the extracted codebase context (default: codebase_context.txt)")
+    parser.add_argument("--cleanup", action="store_true",
+                        help="Delete the context file after execution")
+    parser.add_argument("--version", action="version", version="chill-vibe v0.1.0")
+    return parser
+
+def main():
+    parser = get_parser()
     args = parser.parse_args()
+
+    if not args.path:
+        parser.print_help()
+        sys.exit(0)
     
     # Pre-flight checks
     validate_environment(args.agent)
     
     # Phase A: Context Extraction
-    context_file = "codebase_context.txt"
-    run_git_dump(args.path, context_file)
+    run_git_dump(args.path, args.context_file)
     
-    if args.dry_run:
-        print("\n[*] Dry-run mode: Context extracted.")
-        # We still run Phase B to show what the prompt WOULD be
-    
-    # Phase B: Strategic Reasoning
-    agent_prompt = get_strategic_reasoning(context_file, args.model, args.thinking, args.verbose)
-    
-    if args.dry_run:
-        print("\n--- GENERATED AGENT PROMPT ---")
-        print(agent_prompt)
-        print("------------------------------")
-        return
-
-    # Phase C: Autonomous Execution
-    run_coding_agent(args.agent, agent_prompt)
+    try:
+        if args.dry_run:
+            print("\n[*] Dry-run mode: Context extracted.")
+            # We still run Phase B to show what the prompt WOULD be
+        
+        # Phase B: Strategic Reasoning
+        agent_prompt = get_strategic_reasoning(args.context_file, args.model, args.thinking, args.verbose)
+        
+        if args.dry_run:
+            print("\n--- GENERATED AGENT PROMPT ---")
+            print(agent_prompt)
+            print("------------------------------")
+        else:
+            # Phase C: Autonomous Execution
+            run_coding_agent(args.agent, agent_prompt)
+    finally:
+        if args.cleanup and os.path.exists(args.context_file):
+            print(f"[*] Cleaning up context file: {args.context_file}")
+            os.remove(args.context_file)
 
 if __name__ == "__main__":
     main()

@@ -7,7 +7,7 @@
 The tool operates in three distinct phases:
 
 ### Phase A: Context Extraction (The "Eyes")
-Uses `git-dump` to aggregate the entire codebase into a single, LLM-friendly context file (`codebase_context.txt`). This ensures the "Brain" has a complete, unfiltered view of the project's structure, patterns, dependencies, and logic—eliminating the blind spots that plague standard agent workflows.
+Uses `git-dump` to aggregate the entire codebase into a single, LLM-friendly context file (default: `codebase_context.txt`). This ensures the "Brain" has a complete, unfiltered view of the project's structure, patterns, dependencies, and logic—eliminating the blind spots that plague standard agent workflows.
 
 ### Phase B: Strategic Reasoning (The "Brain")
 Initializes the `google-genai` SDK using `gemini-3-flash-preview`.
@@ -52,10 +52,13 @@ Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subp
 - `--thinking`: Thinking level for Gemini reasoning: `HIGH` (default), `MEDIUM`, or `LOW`.
 - `--model`: The Gemini model ID (default: `gemini-3-flash-preview`).
 - `--dry-run`: Extracts context and generates the strategic prompt without launching the coding agent.
+- `--context-file`: The file to store the extracted codebase context (default: `codebase_context.txt`).
+- `--cleanup`: Delete the context file after execution.
+- `--version`: Show the program's version number and exit.
 
 ### Example:
 ```bash
-./chill-vibe.py ../my-project --agent gemini-cli --thinking HIGH
+./chill-vibe.py . --dry-run --cleanup --context-file temp_context.txt
 ```
 
 ## 🧰 Dependencies

@@ -64,6 +64,22 @@ class TestChillVibe(unittest.TestCase):
             
             self.assertEqual(prompt, "Full response without tags")
 
+    @patch('builtins.open', new_callable=mock_open, read_data="code context")
+    @patch('os.path.exists')
+    @patch.dict('os.environ', {'GEMINI_API_KEY': 'test_key'})
+    def test_get_strategic_reasoning_markdown_tags(self, mock_exists, mock_file):
+        mock_exists.return_value = True
+        
+        with patch.object(chill_vibe.genai, 'Client') as mock_client_class:
+            mock_client = mock_client_class.return_value
+            mock_response = MagicMock()
+            mock_response.text = "Here is the prompt:\n\n```xml\n<agent_prompt>\nDo the thing\n</agent_prompt>\n```"
+            mock_client.models.generate_content.return_value = mock_response
+            
+            prompt = chill_vibe.get_strategic_reasoning("context.txt", "model-id", "HIGH")
+            
+            self.assertEqual(prompt, "Do the thing")
+
     @patch('subprocess.Popen')
     @patch('threading.Thread')
     def test_run_coding_agent_gemini(self, mock_thread, mock_popen):
