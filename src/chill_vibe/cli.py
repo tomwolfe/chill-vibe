@@ -152,7 +152,7 @@ def main():
             success_passed = True
             verification_results = []
             if exit_code == 0:
-                success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline)
+                success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline, protected_files=config_data.get("protected_files"))
                 if not success_passed:
                     print("[!] Agent finished with exit code 0, but success criteria failed.")
                     exit_code = 1 # Force failure if criteria not met
@@ -163,6 +163,7 @@ def main():
 
             # Structured Recovery Loop
             classification = None
+            lessons_learned = None
             if exit_code != 0 and exit_code != 130 and args.retry:
                 max_retries = config_data.get("max_retries") or global_config.get("max_retries") or DEFAULT_CONFIG.get("max_retries", 1)
                 retry_count = 0
@@ -179,7 +180,7 @@ def main():
                     # Classify and recover
                     agent = registry[args.agent]
                     failure_output = "".join(list(agent.last_output))
-                    recovery_prompt, classification = get_recovery_strategy(
+                    recovery_prompt, classification, lessons_learned = get_recovery_strategy(
                         args.path, 
                         args.model, 
                         mission.agent_prompt, 
@@ -207,7 +208,7 @@ def main():
                         
                         # Verify again after recovery
                         if exit_code == 0:
-                            success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline)
+                            success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline, protected_files=config_data.get("protected_files"))
                             if not success_passed:
                                 print("[!] Recovery attempt finished with exit code 0, but success criteria failed.")
                                 exit_code = 1
@@ -233,7 +234,8 @@ def main():
                 status=status, 
                 exit_code=exit_code,
                 classification=classification,
-                verification_results=verification_results
+                verification_results=verification_results,
+                lessons_learned=lessons_learned
             )
             
             # Post-run summary

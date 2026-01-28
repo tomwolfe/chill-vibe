@@ -7,6 +7,8 @@ import tty
 import termios
 import select
 import re
+import hashlib
+import fnmatch
 from pathlib import Path
 
 import time
@@ -187,9 +189,20 @@ def git_rollback(repo_path, commit_hash):
         print(f"[!] Rollback failed: {e}")
         return False
 
+def get_file_hash(file_path):
+    """Calculate the MD5 hash of a file."""
+    hash_md5 = hashlib.md5()
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+    except Exception:
+        return None
+
 def get_file_baseline(repo_path):
-    """Get a list of all files in the repository for comparison."""
-    baseline = set()
+    """Get a dictionary of all files and their hashes."""
+    baseline = {}
     for root, dirs, files in os.walk(repo_path):
         # Skip .git and __pycache__
         if ".git" in dirs:
@@ -198,17 +211,46 @@ def get_file_baseline(repo_path):
             dirs.remove("__pycache__")
             
         for file in files:
-            baseline.add(os.path.relpath(os.path.join(root, file), repo_path))
+            rel_path = os.path.relpath(os.path.join(root, file), repo_path)
+            baseline[rel_path] = get_file_hash(os.path.join(root, file))
     return baseline
 
-def verify_success(success_criteria, repo_path, file_baseline=None):
+def verify_success(success_criteria, repo_path, file_baseline=None, protected_files=None):
     """Run machine-verifiable success criteria (shell commands or invariants)."""
-    if not success_criteria:
-        return True, []
-
-    print("\n[*] Verifying success criteria...")
     results = []
     all_passed = True
+    
+    # 1. Automatic Invariants (e.g., no_clobber)
+    if protected_files:
+        print(f"[*] Running no-clobber check on {len(protected_files)} protected files...")
+        current_baseline = get_file_baseline(repo_path)
+        clobbered = []
+        
+        for pf in protected_files:
+            # Handle potential globs or exact paths
+            # For now, assume exact paths for simplicity, or we can use fnmatch
+            matched_files = fnmatch.filter(current_baseline.keys(), pf)
+            for f in matched_files:
+                if f in file_baseline and current_baseline[f] != file_baseline[f]:
+                    clobbered.append(f)
+        
+        result = {
+            "criterion": "no_clobber",
+            "passed": len(clobbered) == 0,
+            "message": f"Protected files modified: {', '.join(clobbered)}" if clobbered else "No protected files modified",
+            "details": {"clobbered_files": clobbered}
+        }
+        if not result["passed"]:
+            print(f"    [✗] Failed: {result['message']}")
+            all_passed = False
+        else:
+            print(f"    [✓] Passed")
+        results.append(result)
+
+    if not success_criteria:
+        return all_passed, results
+
+    print("\n[*] Verifying success criteria...")
     
     for criterion in success_criteria:
         print(f"[*] Running check: {criterion}")
@@ -262,8 +304,9 @@ def verify_success(success_criteria, repo_path, file_baseline=None):
                     passed = True
                     message = "No file baseline provided for comparison"
                 else:
-                    current_files = get_file_baseline(repo_path)
-                    new_files = current_files - file_baseline
+                    current_files = set(get_file_baseline(repo_path).keys())
+                    baseline_files = set(file_baseline.keys())
+                    new_files = current_files - baseline_files
                     passed = len(new_files) == 0
                     message = f"New files detected: {', '.join(new_files)}" if not passed else "No new files detected"
                 

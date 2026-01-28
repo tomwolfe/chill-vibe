@@ -113,6 +113,16 @@ def run_doctor(registry):
     else:
         print("[✗] git: Not installed (Context extraction may be limited)")
 
+    # 4b. Check log file size
+    log_file = os.path.join(os.getcwd(), ".chillvibe_logs.jsonl")
+    if os.path.exists(log_file):
+        size_bytes = os.path.getsize(log_file)
+        size_mb = size_bytes / (1024 * 1024)
+        if size_mb > 1.0:
+            print(f"[!] Log file is getting large ({size_mb:.2f} MB). Consider rotating it: mv .chillvibe_logs.jsonl .chillvibe_logs.jsonl.bak")
+        else:
+            print(f"[✓] Log file size: {size_mb:.2f} MB")
+
     # 5. Check Agents
     print("\nAgent Availability:")
     for name, agent in registry.items():

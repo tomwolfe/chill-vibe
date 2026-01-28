@@ -77,12 +77,13 @@ After execution:
    * `coverage: <min_percent>`: Enforces minimum test coverage.
    * `eval: <python_snippet>`: Custom state verification via Python one-liners.
    * `no_new_files`: Invariant enforcement.
+   * `no_clobber`: Protects specific files from modification (defined in project config).
    * `exists: <path>`: File/directory existence.
    * `contains: <path> <regex>`: Content validation.
 2. **Automatic State Rollback**: If verification fails and `--rollback` is enabled, the system automatically performs a `git reset --hard` to the pre-execution HEAD. This ensures the next recovery attempt starts from a clean slate rather than a "half-baked" or broken state.
 3. **Change Summarization**: Generates a human-readable summary of all filesystem changes using `git diff`.
-4. **Classification & Memory**: If checks fail, the failure is classified (LOGIC, TOOLING, etc.). The recovery engine generates a **"Lessons Learned"** summary that contrasts what was attempted against the specific verification failures.
-5. **Targeted Bounded Recovery**: A recovery strategy is generated, incorporating **historical failure memory** and the detailed verification results. The loop is explicitly bounded to prevent unproductive retries or repeated failure modes.
+4. **Classification & Memory**: If checks fail, the failure is classified (LOGIC, TOOLING, etc.). The recovery engine generates a **"Lessons Learned"** summary that is persisted to `.chillvibe_logs.jsonl`.
+5. **Targeted Bounded Recovery**: A recovery strategy is generated, incorporating **historical failure memory** (top 3 lessons from similar past failures) and the detailed verification results. The loop is explicitly bounded to prevent unproductive retries or repeated failure modes.
 
 This loop converts retries from blind restarts into informed adaptation.
 

@@ -88,17 +88,17 @@ class TestEnhancedFeatures(unittest.TestCase):
 
     @patch('chill_vibe.execution.get_file_baseline')
     def test_verify_success_no_new_files(self, mock_get_baseline):
-        mock_get_baseline.return_value = {"file1.txt"}
+        mock_get_baseline.return_value = {"file1.txt": "hash1"}
         criteria = ["no_new_files"]
         
         # Scenario 1: No new files
-        with patch('chill_vibe.execution.get_file_baseline', side_effect=[{"file1.txt"}]) as mock_current:
-            passed, results = execution.verify_success(criteria, ".", file_baseline={"file1.txt"})
+        with patch('chill_vibe.execution.get_file_baseline', side_effect=[{"file1.txt": "hash1"}]) as mock_current:
+            passed, results = execution.verify_success(criteria, ".", file_baseline={"file1.txt": "hash1"})
             self.assertTrue(passed)
 
         # Scenario 2: New files detected
-        with patch('chill_vibe.execution.get_file_baseline', side_effect=[{"file1.txt", "file2.txt"}]) as mock_current:
-            passed, results = execution.verify_success(criteria, ".", file_baseline={"file1.txt"})
+        with patch('chill_vibe.execution.get_file_baseline', side_effect=[{"file1.txt": "hash1", "file2.txt": "hash2"}]) as mock_current:
+            passed, results = execution.verify_success(criteria, ".", file_baseline={"file1.txt": "hash1"})
             self.assertFalse(passed)
             self.assertIn("file2.txt", results[0]["message"])
 
@@ -179,14 +179,15 @@ class TestEnhancedFeatures(unittest.TestCase):
     def test_get_recovery_strategy_with_signals(self, mock_client_class):
         mock_client = mock_client_class.return_value
         mock_response = MagicMock()
-        mock_response.text = "Analysis... <classification>TOOLING</classification> <agent_prompt>Try installing the module</agent_prompt>"
+        mock_response.text = "Analysis... <lessons_learned>Avoid missing requests</lessons_learned> <classification>TOOLING</classification> <agent_prompt>Try installing the module</agent_prompt>"
         mock_client.models.generate_content.return_value = mock_response
         
         output = ["ModuleNotFoundError: No module named 'requests'\n"]
-        prompt, classification = reasoning.get_recovery_strategy(".", "model-id", "Original Prompt", output, exit_code=1)
+        prompt, classification, lessons = reasoning.get_recovery_strategy(".", "model-id", "Original Prompt", output, exit_code=1)
         
         self.assertEqual(classification, "TOOLING")
         self.assertEqual(prompt, "Try installing the module")
+        self.assertEqual(lessons, "Avoid missing requests")
         
         # Verify that signals were likely in the prompt (by checking the call)
         call_args = mock_client.models.generate_content.call_args[1]

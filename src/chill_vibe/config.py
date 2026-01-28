@@ -27,7 +27,7 @@ DEFAULT_AGENTS = {
     }
 }
 
-VALID_CONFIG_KEYS = {"agents", "extra_args", "model", "thinking_level", "exclude_patterns", "depth", "include_ext"}
+VALID_CONFIG_KEYS = {"agents", "extra_args", "model", "thinking_level", "exclude_patterns", "depth", "include_ext", "protected_files"}
 
 def load_config(repo_path):
     """Load project configuration from .chillvibe.json or .chillvibe.yaml/.yml."""
