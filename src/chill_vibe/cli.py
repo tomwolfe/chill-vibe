@@ -6,7 +6,7 @@ from . import __version__
 from .config import get_agent_registry, load_config, get_default_model
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
-from .reasoning import get_strategic_reasoning, log_mission, show_history
+from .reasoning import get_strategic_reasoning, log_mission, show_history, get_recovery_strategy
 from .execution import run_coding_agent
 
 def get_parser(registry):
@@ -27,6 +27,8 @@ def get_parser(registry):
                         help="The file to store the extracted codebase context (default: codebase_context.txt)")
     parser.add_argument("--cleanup", action="store_true",
                         help="Delete the context file after execution")
+    parser.add_argument("--retry", action="store_true",
+                        help="If the agent fails, automatically request a recovery strategy and retry once")
     parser.add_argument("--depth", type=int, help="Limit how deep the context extraction crawls")
     parser.add_argument("--include-ext", help="Filter extraction to specific file extensions (e.g., py,md)")
     parser.add_argument("--exclude", help="Comma-separated list of glob patterns to ignore during context extraction")
@@ -93,6 +95,20 @@ def main():
             # Phase C: Autonomous Execution
             exit_code = run_coding_agent(args.agent, agent_prompt, registry, config_data)
             
+            # Retry mechanism
+            if exit_code != 0 and exit_code != 130 and args.retry:
+                print(f"\n[!] Agent {args.agent} failed with exit code {exit_code}. Attempting recovery...")
+                agent = registry[args.agent]
+                failure_output = "".join(list(agent.last_output))
+                recovery_prompt = get_recovery_strategy(args.path, args.model, agent_prompt, failure_output, config_data)
+                
+                if recovery_prompt:
+                    print("[*] Running recovery strategy...")
+                    exit_code = run_coding_agent(args.agent, recovery_prompt, registry, config_data)
+                    agent_prompt = recovery_prompt # Update for logging
+                else:
+                    print("[!] Failed to generate recovery strategy.")
+
             status = "COMPLETED" if exit_code == 0 else "FAILED"
             if exit_code == 130:
                 status = "INTERRUPTED"

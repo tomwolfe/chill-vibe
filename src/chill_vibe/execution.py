@@ -6,6 +6,7 @@ import threading
 import tty
 import termios
 
+import collections
 import contextlib
 
 @contextlib.contextmanager
@@ -27,20 +28,38 @@ def forward_stdin(process):
     try:
         with raw_mode(sys.stdin):
             while True:
-                char = sys.stdin.read(1)
-                if not char:
+                try:
+                    char = sys.stdin.read(1)
+                    if not char:
+                        break
+                    process.stdin.write(char)
+                    process.stdin.flush()
+                except (EOFError, BrokenPipeError):
                     break
-                process.stdin.write(char)
-                process.stdin.flush()
     except Exception as e:
-        log_file = os.path.join(os.getcwd(), ".chillvibe_debug.log")
-        with open(log_file, "a") as f:
-            f.write(f"forward_stdin error: {e}\n")
+        # Silently fail if we can't write to log, but try to log significant errors
+        try:
+            log_file = os.path.join(os.getcwd(), ".chillvibe_debug.log")
+            with open(log_file, "a") as f:
+                f.write(f"forward_stdin error: {e}\n")
+        except:
+            pass
     finally:
         try:
             process.stdin.close()
         except:
             pass
+
+def output_reader(pipe, stream, buffer):
+    """Read from a pipe and write to both a stream and a circular buffer."""
+    try:
+        for line in iter(pipe.readline, ''):
+            if line:
+                stream.write(line)
+                stream.flush()
+                buffer.append(line)
+    except Exception:
+        pass
 
 class CodingAgent:
     """Represents a coding agent that can be executed."""
@@ -49,6 +68,7 @@ class CodingAgent:
         self.command = command
         self.dependencies = dependencies or []
         self.extra_args = []
+        self.last_output = collections.deque(maxlen=50)
 
     def validate(self):
         """Check if all dependencies for this agent are installed."""
@@ -63,11 +83,13 @@ class CodingAgent:
         print(f"[*] Launching {self.name} in autonomous mode...")
         
         full_command = self.command + self.extra_args
+        self.last_output.clear()
+        
         process = subprocess.Popen(
             full_command,
             stdin=subprocess.PIPE,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, # Merge stderr into stdout for easier tracking
             text=True,
             bufsize=1
         )
@@ -79,8 +101,19 @@ class CodingAgent:
         # 2. Start a background thread to forward user input to the agent
         threading.Thread(target=forward_stdin, args=(process,), daemon=True).start()
         
+        # 3. Start a background thread to capture and display output
+        reader_thread = threading.Thread(
+            target=output_reader, 
+            args=(process.stdout, sys.stdout, self.last_output),
+            daemon=True
+        )
+        reader_thread.start()
+        
         try:
-            return process.wait()
+            exit_code = process.wait()
+            # Give the reader thread a moment to finish capturing output
+            reader_thread.join(timeout=1)
+            return exit_code
         except KeyboardInterrupt:
             print(f"[*] chill-vibe: Terminating {self.name}...")
             process.terminate()

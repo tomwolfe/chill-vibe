@@ -83,7 +83,7 @@ def run_doctor(registry):
             print(f"  [✗] {name}: Missing dependencies ({', '.join(missing)})")
             if input(f"  [?] Would you like to attempt to install missing dependencies for {name}? (y/n): ").lower() == 'y':
                 for dep in missing:
-                    if dep in ["aider", "qwen"]:
+                    if dep in ["aider", "qwen", "mentat", "gptme"]:
                         install_package(dep)
                     else:
                         print(f"  [!] Don't know how to automatically install '{dep}'. Please install it manually.")

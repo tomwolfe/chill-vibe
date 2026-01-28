@@ -15,6 +15,14 @@ DEFAULT_AGENTS = {
     "aider": {
         "command": ["aider", "--architect"],
         "dependencies": ["aider"]
+    },
+    "mentat": {
+        "command": ["mentat"],
+        "dependencies": ["mentat"]
+    },
+    "gpt-me": {
+        "command": ["gptme"],
+        "dependencies": ["gptme"]
     }
 }
 

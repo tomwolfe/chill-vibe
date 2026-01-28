@@ -19,7 +19,8 @@ Initializes the `google-genai` SDK using `gemini-3-flash-preview`.
 Launches a specialized coding agent (like `gemini-cli` or `qwen-code`) as a subprocess.
 - **Handoff:** The strategic prompt from Phase B is automatically piped into the agent's input stream.
 - **YOLO Mode:** For `gemini-cli`, it uses the `--yolo` flag to streamline operations.
-- **Interactivity:** Unlike standard pipes, `chill-vibe` maintains a direct connection to your terminal, allowing you to monitor progress and provide manual input (e.g., "keep trying" or handling rate limits) while the agent works.
+- **Interactivity:** Unlike standard pipes, `chill-vibe` maintains a direct connection to your terminal, allowing you to monitor progress and provide manual input.
+- **Recovery Strategy (Feedback Loop):** If an agent fails (non-zero exit code), `chill-vibe` can capture the failure output and send it back to Gemini to generate a refined "Recovery Strategy" and retry the mission automatically.
 
 ## 🛠 Installation
 
@@ -47,12 +48,13 @@ chill-vibe [path_to_repo] [options]
 
 ### Arguments:
 - `path`: The directory of the repository you want to analyze and modify.
-- `--agent`: Choice of coding agent: `gemini-cli` (default), `aider`, or `qwen`.
+- `--agent`: Choice of coding agent: `gemini-cli` (default), `aider`, `qwen`, `mentat`, or `gpt-me`.
 - `--thinking`: Thinking level for Gemini reasoning: `HIGH` (default), `MEDIUM`, or `LOW`.
 - `--model`: The Gemini model ID (default: `gemini-3-flash-preview`).
 - `--dry-run`: Extracts context and generates the strategic prompt without launching the coding agent.
 - `--context-file`: The file to store the extracted codebase context (default: `codebase_context.txt`).
 - `--cleanup`: Delete the context file after execution.
+- `--retry`: If the agent fails, automatically request a recovery strategy and retry once.
 - `--history`: Show mission history from `.chillvibe_logs.jsonl`.
 - `--doctor`: Run a diagnostic check on the environment and agents.
 - `--version`: Show the program's version number and exit.

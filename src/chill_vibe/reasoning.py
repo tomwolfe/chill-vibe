@@ -160,3 +160,40 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
         agent_prompt = full_text
         
     return agent_prompt
+
+def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, config_data=None):
+    """Generate a recovery strategy after an agent fails."""
+    if genai is None:
+        print("Error: google-genai SDK not found.")
+        sys.exit(1)
+
+    client = genai.Client()
+    
+    prompt = (
+        "The coding agent failed with a non-zero exit code. "
+        "Review the original prompt and the last 50 lines of output, then provide a 'Recovery Strategy' "
+        "in the form of a NEW agent prompt to fix the issues.\n\n"
+        "--- ORIGINAL PROMPT ---\n"
+        f"{original_prompt}\n\n"
+        "--- FAILED OUTPUT (LAST 50 LINES) ---\n"
+        f"{failure_output}\n\n"
+        "--- INSTRUCTIONS ---\n"
+        "Provide your analysis of the failure first, then provide the new agent prompt wrapped in <agent_prompt> tags."
+    )
+    
+    print(f"[*] Requesting recovery strategy from {model_id}...")
+    
+    try:
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt
+        )
+    except Exception as e:
+        print(f"Error calling Gemini API for recovery: {e}")
+        return None
+        
+    full_text = response.text
+    match = re.search(r"(?:```(?:xml|html)?\s*)?<agent_prompt>(.*?)</agent_prompt>(?:\s*```)?", full_text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return full_text
