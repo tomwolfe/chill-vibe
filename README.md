@@ -20,8 +20,9 @@ Most coding agents rely on:
 **chill-vibe replaces those failure points with explicit structure:**
 
 * **Machine-verifiable success criteria** (not vibes)
-* **Low-entropy, checklist-driven agent prompts**
-* **Failure classification + targeted recovery strategies**
+* **Second-pass mission validation** (expert auditor pass)
+* **Structured JSON mission contracts** (zero ambiguity)
+* **Failure classification + memory-aware recovery**
 * **Deterministic behavior across different models**
 
 This shifts performance from *peak brilliance* to *variance compression*—the dominant failure mode of autonomous agents today.
@@ -44,12 +45,13 @@ This guarantees full architectural visibility and eliminates partial-context rea
 
 Uses Gemini (default: `gemini-3-flash-preview`) exclusively for *planning*, not execution.
 
-Outputs a **deterministic mission contract** containing:
-
-* Explicit objectives
-* Forbidden actions
-* Ordered execution checklist
-* **Machine-verifiable success criteria** (commands, file checks, invariants)
+1. **Strategic Analysis**: Analyzes the codebase and user constraints to define a path forward.
+2. **Mission Synthesis**: Generates a **structured JSON mission contract** containing:
+   * Explicit objectives & Non-goals
+   * Forbidden actions
+   * Ordered execution checklist
+   * **Machine-verifiable success criteria** (commands, file checks, invariants)
+3. **Second-Pass Validation**: An "Expert Mission Auditor" pass reviews the contract for completeness, testability, and safety before execution.
 
 This step intentionally reduces prompt entropy and removes open-ended interpretation.
 
@@ -59,9 +61,9 @@ This step intentionally reduces prompt entropy and removes open-ended interpreta
 
 Launches a coding agent (`gemini-cli`, `qwen`, `aider`, etc.) as a subprocess.
 
-* The agent receives a self-contained mission
-* No further interpretation or planning is required
-* The agent is treated as a precision executor
+* The agent receives a self-contained, checklist-driven mission.
+* Pre-execution file baselines are captured for invariant checking.
+* The agent is treated as a precision executor.
 
 ---
 
@@ -69,19 +71,14 @@ Launches a coding agent (`gemini-cli`, `qwen`, `aider`, etc.) as a subprocess.
 
 After execution:
 
-1. Success criteria are run automatically. Supports shell commands and state-based invariants:
-   * `exists: <path>` (file or directory existence)
-   * `contains: <path> <regex>` (content validation)
-   * `not_contains: <path> <regex>` (absence validation)
-2. If *any* criterion fails, the mission is marked as failed—even if the agent exited cleanly.
-3. Failures are **grounded and classified** using execution signals (exit codes, error patterns) into:
-
-   * `LOGIC`
-   * `TOOLING`
-   * `ENVIRONMENT`
-   * `AMBIGUITY`
-4. A **targeted recovery strategy** is generated based on the failure class
-5. The mission is retried with adapted instructions
+1. **Success Verification**: Criteria are run automatically. Supports:
+   * `pytest` & `ruff`: Semantic and linting checks.
+   * `no_new_files`: Invariant enforcement.
+   * `exists: <path>`: File/directory existence.
+   * `contains: <path> <regex>`: Content validation.
+2. **Change Summarization**: Generates a human-readable summary of all filesystem changes using `git diff`.
+3. **Classification & Memory**: If checks fail, the failure is classified (LOGIC, TOOLING, etc.).
+4. **Targeted Recovery**: A recovery strategy is generated, incorporating **historical failure memory** from past missions to prevent repetitive errors.
 
 This loop converts retries from blind restarts into informed adaptation.
 
