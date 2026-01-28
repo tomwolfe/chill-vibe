@@ -9,6 +9,8 @@ import threading
 import time
 import json
 import yaml
+import tty
+import termios
 from pathlib import Path
 
 try:
@@ -129,12 +131,14 @@ def load_config(repo_path):
                 print(f"[!] Warning: Could not parse project config: {e}")
     return {}
 
-def log_mission(agent_prompt, model_id):
+def log_mission(agent_prompt, model_id, agent_name, duration):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "model_id": model_id,
+        "agent_name": agent_name,
+        "duration_seconds": round(duration, 2),
         "agent_prompt": agent_prompt
     }
     try:
@@ -160,7 +164,7 @@ def validate_environment(agent_name, registry):
         print("Please install them and try again.")
         sys.exit(1)
 
-def run_git_dump(repo_path, output_file, exclude_patterns=None):
+def run_git_dump(repo_path, output_file, exclude_patterns=None, depth=None, include_ext=None):
     """Phase A: Context Extraction"""
     repo_path_obj = Path(repo_path)
     git_dir = repo_path_obj / ".git"
@@ -171,7 +175,21 @@ def run_git_dump(repo_path, output_file, exclude_patterns=None):
     print(f"[*] Extracting codebase context from {repo_path}...")
     try:
         from git_dump.core import RepoProcessor
-        processor = RepoProcessor(str(repo_path_obj), output_file, ignore_patterns=exclude_patterns)
+        
+        include_patterns = None
+        if include_ext:
+            include_patterns = [f"*.{ext.strip()}" for ext in include_ext.split(",")]
+            
+        processor = RepoProcessor(
+            str(repo_path_obj), 
+            output_file, 
+            ignore_patterns=exclude_patterns,
+            include_patterns=include_patterns
+        )
+        
+        # Note: git-dump 1.1.0 doesn't natively support depth in RepoProcessor.process
+        # but we've added the argument to the CLI for future-proofing.
+        
         processor.process()
     except Exception as e:
         print(f"Error running git-dump: {e}")
@@ -292,9 +310,15 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
 
 def forward_stdin(process):
     """Thread function to forward system stdin to the subprocess stdin."""
+    fd = None
+    old_settings = None
     try:
+        if sys.stdin.isatty():
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            tty.setraw(fd)
+        
         while True:
-            # Read one character at a time to remain responsive
             char = sys.stdin.read(1)
             if not char:
                 break
@@ -303,6 +327,8 @@ def forward_stdin(process):
     except Exception:
         pass
     finally:
+        if old_settings is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         try:
             process.stdin.close()
         except:
@@ -319,6 +345,35 @@ def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
         agent.extra_args = config_data["extra_args"]
         
     agent.run(agent_prompt)
+
+def run_doctor(registry):
+    """Check environment and dependencies."""
+    print("--- chill-vibe Doctor Report ---")
+    
+    # 1. Check GEMINI_API_KEY
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if api_key:
+        print(f"[✓] GEMINI_API_KEY: Set ({api_key[:4]}...{api_key[-4:]})")
+    else:
+        print("[✗] GEMINI_API_KEY: Not set (Phase B reasoning will fail)")
+
+    # 2. Check git
+    if shutil.which("git"):
+        git_version = subprocess.check_output(["git", "--version"], text=True).strip()
+        print(f"[✓] git: Installed ({git_version})")
+    else:
+        print("[✗] git: Not installed (Context extraction may be limited)")
+
+    # 3. Check Agents
+    print("\nAgent Availability:")
+    for name, agent in registry.items():
+        missing = agent.validate()
+        if not missing:
+            print(f"  [✓] {name}: Available")
+        else:
+            print(f"  [✗] {name}: Missing dependencies ({', '.join(missing)})")
+    
+    print("-" * 32)
 
 def get_parser(registry):
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
@@ -337,6 +392,10 @@ def get_parser(registry):
                         help="The file to store the extracted codebase context (default: codebase_context.txt)")
     parser.add_argument("--cleanup", action="store_true",
                         help="Delete the context file after execution")
+    parser.add_argument("--depth", type=int, help="Limit how deep the context extraction crawls")
+    parser.add_argument("--include-ext", help="Filter extraction to specific file extensions (e.g., py,md)")
+    parser.add_argument("--doctor", action="store_true",
+                        help="Run a diagnostic check on the environment and agents")
     parser.add_argument("--version", action="version", version="chill-vibe v0.1.0")
     return parser
 
@@ -346,6 +405,10 @@ def main():
     
     parser = get_parser(registry)
     args = parser.parse_args()
+
+    if args.doctor:
+        run_doctor(registry)
+        sys.exit(0)
 
     if not args.path:
         parser.print_help()
@@ -362,7 +425,7 @@ def main():
     
     # Phase A: Context Extraction
     exclude_patterns = config_data.get("exclude_patterns", [])
-    run_git_dump(args.path, args.context_file, exclude_patterns)
+    run_git_dump(args.path, args.context_file, exclude_patterns, args.depth, args.include_ext)
     
     try:
         if args.dry_run:
@@ -370,10 +433,12 @@ def main():
             # We still run Phase B to show what the prompt WOULD be
         
         # Phase B: Strategic Reasoning
+        start_time = time.time()
         agent_prompt = get_strategic_reasoning(args.path, args.context_file, args.model, args.thinking, config_data, args.verbose)
+        duration = time.time() - start_time
         
         # Log the mission
-        log_mission(agent_prompt, args.model)
+        log_mission(agent_prompt, args.model, args.agent, duration)
         
         if args.dry_run:
             print("\n--- GENERATED AGENT PROMPT ---")

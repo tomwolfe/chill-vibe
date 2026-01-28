@@ -47,5 +47,23 @@ class TestArgs(unittest.TestCase):
         args = parser.parse_args(['.', '--dry-run'])
         self.assertTrue(args.dry_run)
 
+    def test_doctor_flag(self):
+        registry = chill_vibe.get_agent_registry()
+        parser = chill_vibe.get_parser(registry)
+        args = parser.parse_args(['--doctor'])
+        self.assertTrue(args.doctor)
+
+    def test_depth_arg(self):
+        registry = chill_vibe.get_agent_registry()
+        parser = chill_vibe.get_parser(registry)
+        args = parser.parse_args(['.', '--depth', '3'])
+        self.assertEqual(args.depth, 3)
+
+    def test_include_ext_arg(self):
+        registry = chill_vibe.get_agent_registry()
+        parser = chill_vibe.get_parser(registry)
+        args = parser.parse_args(['.', '--include-ext', 'py,md'])
+        self.assertEqual(args.include_ext, 'py,md')
+
 if __name__ == '__main__':
     unittest.main()

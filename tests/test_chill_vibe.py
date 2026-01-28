@@ -31,8 +31,12 @@ class TestChillVibe(unittest.TestCase):
         with patch('git_dump.core.RepoProcessor') as mock_processor_class, \
              patch('pathlib.Path.exists', return_value=True), \
              patch('pathlib.Path.is_dir', return_value=True):
-            chill_vibe.run_git_dump("repo/path", "output.txt", ["*.log"])
-            mock_processor_class.assert_called_once_with("repo/path", "output.txt", ignore_patterns=["*.log"])
+            chill_vibe.run_git_dump("repo/path", "output.txt", ["*.log"], depth=2, include_ext="py,md")
+            mock_processor_class.assert_called_once_with(
+                "repo/path", "output.txt", 
+                ignore_patterns=["*.log"],
+                include_patterns=["*.py", "*.md"]
+            )
             mock_processor_class.return_value.process.assert_called_once()
 
     def test_run_git_dump_non_git(self):
@@ -41,7 +45,11 @@ class TestChillVibe(unittest.TestCase):
              patch('builtins.print') as mock_print:
             chill_vibe.run_git_dump("repo/path", "output.txt")
             mock_print.assert_any_call("[!] Warning: repo/path is not a valid git repository. Falling back to standard folder processing.")
-            mock_processor_class.assert_called_once_with("repo/path", "output.txt", ignore_patterns=None)
+            mock_processor_class.assert_called_once_with(
+                "repo/path", "output.txt", 
+                ignore_patterns=None,
+                include_patterns=None
+            )
 
     @patch('builtins.open', new_callable=mock_open, read_data="code context")
     @patch('os.path.exists')
@@ -89,7 +97,7 @@ class TestChillVibe(unittest.TestCase):
 
     @patch('builtins.open', new_callable=mock_open)
     def test_log_mission(self, mock_file):
-        chill_vibe.log_mission("New Prompt", "model-x")
+        chill_vibe.log_mission("New Prompt", "model-x", "gemini-cli", 12.34)
         
         mock_file.assert_called_with(Path(".chillvibe_logs.jsonl"), "a")
         handle = mock_file()
@@ -97,13 +105,29 @@ class TestChillVibe(unittest.TestCase):
         log_entry = json.loads(write_call)
         self.assertEqual(log_entry["agent_prompt"], "New Prompt")
         self.assertEqual(log_entry["model_id"], "model-x")
+        self.assertEqual(log_entry["agent_name"], "gemini-cli")
+        self.assertEqual(log_entry["duration_seconds"], 12.34)
         self.assertIn("timestamp", log_entry)
+
+    @patch('builtins.print')
+    @patch('shutil.which', return_value="/usr/bin/git")
+    @patch('subprocess.check_output', return_value="git version 2.39.2")
+    @patch.dict('os.environ', {'GEMINI_API_KEY': 'AIza...test'})
+    def test_run_doctor(self, mock_git_ver, mock_which, mock_print):
+        registry = chill_vibe.get_agent_registry()
+        chill_vibe.run_doctor(registry)
+        
+        mock_print.assert_any_call("[✓] GEMINI_API_KEY: Set (AIza...test)")
+        mock_print.assert_any_call("[✓] git: Installed (git version 2.39.2)")
+        # Just check that it prints availability for at least one agent
+        mock_print.assert_any_call("  [✓] gemini-cli: Available")
 
     def test_forward_stdin(self):
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
         
-        with patch('sys.stdin.read', side_effect=['a', 'b', '']):
+        with patch('sys.stdin.read', side_effect=['a', 'b', '']), \
+             patch('sys.stdin.isatty', return_value=False):
             chill_vibe.forward_stdin(mock_process)
             
         self.assertEqual(mock_process.stdin.write.call_count, 2)
