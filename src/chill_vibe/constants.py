@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 DEFAULT_CONFIG = {
-    "model": "gemini-2.0-flash",
+    "model": "gemini-3-flash-preview",
     "thinking_level": "HIGH",
     "budgets": {
         "LOW": 2048,

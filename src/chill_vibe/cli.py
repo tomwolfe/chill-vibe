@@ -57,7 +57,7 @@ def resolve_config(args, config_data, global_config):
         args.model = config_data.get("model") or global_config.get("model") or global_config.get("default_model") or DEFAULT_CONFIG["model"]
     
     if args.model == "flash":
-        args.model = "gemini-2.0-flash"
+        args.model = "gemini-3-flash-preview"
 
     # Resolve Max Cost
     if args.max_cost is None:

@@ -129,7 +129,7 @@ def init_project(repo_path):
 
     default_config = """# chill-vibe project configuration
 # thinking_level: HIGH
-# model: gemini-2.0-pro-exp-02-05
+# model: gemini-3-flash-preview
 
 # extra_args: 
 #   - "--some-flag"

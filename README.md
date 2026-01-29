@@ -13,7 +13,7 @@ Most coding agents fail because success is implicit and retries are blind. `chil
 If you've used autonomous agents, you know the **"Peak Brilliance vs. High Variance"** problem: an agent might solve a complex refactor in one go, then spend the next hour hallucinating a fix for a syntax error it just created.
 
 **chill-vibe eliminates variance by enforcing:**
-*   **Explicit Mission Contracts:** Gemini 2.0 generates a structured JSON contract with machine-verifiable success criteria *before* a single line of code is written.
+*   **Explicit Mission Contracts:** Gemini 3 generates a structured JSON contract with machine-verifiable success criteria *before* a single line of code is written.
 *   **Automatic State Rollback:** If a mission fails verification, the system performs a `git reset --hard`. No more "corrupted state" loops.
 *   **Grounded Recovery:** When an agent fails, `chill-vibe` classifies the error (Logic, Tooling, Environment) and injects "Lessons Learned" from previous failures into the next attempt.
 *   **Full Context Visibility:** Uses `git-dump` to ensure the agent sees the entire architectural state, not just a few files.
@@ -26,7 +26,7 @@ If you've used autonomous agents, you know the **"Peak Brilliance vs. High Varia
 Aggregates your entire repository into a single, LLM-friendly context file using `git-dump`. This eliminates partial-context reasoning errors.
 
 ### 2. Strategic Reasoning (The Brain)
-Uses **Gemini 2.0 (Flash or Pro)** to analyze the codebase and generate a **Mission Contract**:
+Uses **Gemini 3 (Flash or Pro)** to analyze the codebase and generate a **Mission Contract**:
 *   **Objectives & Non-goals:** Clear boundaries for the agent.
 *   **Machine-Verifiable Success Criteria:** Commands like `pytest`, `exists: path/to/file`, or `coverage: 80`.
 *   **Expert Auditor Pass:** A second-pass validation ensures the mission is testable and safe before execution.
@@ -88,7 +88,7 @@ chill-vibe . --agent aider --retry --rollback
 Customize `chill-vibe` per project by creating a `.chillvibe.yaml` file:
 
 ```yaml
-model: "gemini-2.0-pro-exp-02-05"
+model: "gemini-3-flash-preview"
 thinking_level: "HIGH"
 max_cost: 1.50  # Stop if mission costs > $1.50
 
