@@ -1,5 +1,4 @@
 # 🎧 chill-vibe
-
 ### **The Reliability Layer for Autonomous Coding Agents.**
 
 `chill-vibe` is a CLI orchestration layer that wraps autonomous coding agents (like Aider, Gemini-CLI, or Qwen) in a **Reasoning → Mission → Verification → Recovery** control loop. Most coding agents fail because success is implicit and retries are blind. `chill-vibe` fixes this by treating autonomous coding as a **closed-loop control system** rather than a chat interface. It enforces structure, accountability, and learning, transforming unpredictable agent behavior into a reliable, auditable workflow.
@@ -12,22 +11,10 @@ If you've used autonomous agents, you know the **"Peak Brilliance vs. High Varia
 
 Architectural analysis shows that **`chill-vibe` increases the reliability of autonomous coding tasks by ~27%** compared to standalone agent execution by enforcing:
 
-* 
-**Explicit Mission Contracts:** Gemini generates a structured, machine-verifiable JSON contract with clear objectives and success criteria *before* a single line of code is written.
-
-
-* 
-**Automatic State Rollback:** If a mission fails verification, the system performs a `git reset --hard` to prevent "corrupted state" loops.
-
-
-* 
-**Grounded Recovery:** When an agent fails, `chill-vibe` classifies the error (Logic, Tooling, Environment) and injects "Lessons Learned" from previous failures into the next attempt.
-
-
-* 
-**Full Context Visibility:** Uses `git-dump` to ensure the agent sees the entire architectural state, not just a few files.
-
-
+*   **Explicit Mission Contracts:** Gemini generates a structured, machine-verifiable JSON contract with clear objectives and success criteria *before* a single line of code is written.
+*   **Automatic State Rollback:** If a mission fails verification, the system performs a `git reset --hard` to prevent "corrupted state" loops.
+*   **Grounded Recovery:** When an agent fails, `chill-vibe` classifies the error (Logic, Tooling, Environment) and injects "Lessons Learned" from previous failures into the next attempt.
+*   **Full Context Visibility:** Uses `git-dump` to ensure the agent sees the entire architectural state, not just a few files.
 
 ---
 
@@ -36,40 +23,20 @@ Architectural analysis shows that **`chill-vibe` increases the reliability of au
 By moving from "vibe-based" completion to a verified control loop, `chill-vibe` significantly reduces the variance of LLM outputs.
 
 | Task Complexity | Standalone Agent | **chill-vibe** | Reliability Delta |
-| --- | --- | --- | --- |
-| **Simple** (Docstrings, Refactors) | 92% | 98% | +6% 
-
- |
-| **Medium** (New Features, Logic) | 65% | 88% | +23% 
-
- |
-| **Complex** (Cross-file, Breaking Changes) | 30% | 81% | +51% 
-
- |
-| **Weighted Average** | **62%** | **89%** | <br>**+27%** 
-
- |
+| :--- | :--- | :--- | :--- |
+| **Simple** (Docstrings, Refactors) | 92% | 98% | +6% |
+| **Medium** (New Features, Logic) | 65% | 88% | +23% |
+| **Complex** (Cross-file, Breaking Changes) | 30% | 81% | +51% |
+| **Weighted Average** | **62%** | **89%** | **+27%** |
 
 ---
 
 ## 🧠 The Control Loop
 
-1. 
-**Context Extraction:** Aggregates your entire repository into a single context file using `git-dump`.
-
-
-2. 
-**Strategic Reasoning:** Uses **Gemini 3 (Flash or Pro)** to generate a **Mission Contract** with machine-verifiable criteria like `pytest`, `exists: path`, or `no_new_files`.
-
-
-3. 
-**Autonomous Execution:** Launches your preferred agent (Aider, Gemini-CLI, etc.) as a subprocess to execute the contract.
-
-
-4. 
-**Verification & Recovery:** Runs success criteria. If failure occurs, it triggers an auto-rollback and analyzes the failure to generate a new strategy based on historical logs.
-
-
+1.  **Context Extraction:** Aggregates your entire repository into a single context file using `git-dump`.
+2.  **Strategic Reasoning:** Uses **Gemini 3 (Flash or Pro)** to generate a **Mission Contract** with machine-verifiable criteria like `pytest`, `exists: path`, or `no_new_files`.
+3.  **Autonomous Execution:** Launches your preferred agent (Aider, Gemini-CLI, etc.) as a subprocess to execute the contract.
+4.  **Verification & Recovery:** Runs success criteria. If failure occurs, it triggers an auto-rollback and analyzes the failure to generate a new strategy based on historical logs.
 
 ---
 
@@ -79,20 +46,19 @@ By moving from "vibe-based" completion to a verified control loop, `chill-vibe` 
 # Clone and setup
 git clone https://github.com/tomwolfe/chill-vibe.git
 cd chill-vibe
-[cite_start]./setup.sh [cite: 48]
+./setup.sh
 
 # Set your API Key (required)
-[cite_start]export GEMINI_API_KEY='your-api-key-here' [cite: 48]
+export GEMINI_API_KEY='your-api-key-here'
 
 # Install the CLI
-[cite_start]pip install -e . [cite: 48]
+pip install -e .
 
 # Verify installation
-[cite_start]chill-vibe --version [cite: 49]
-
+chill-vibe --version
 ```
 
-Note: Requires `git`, `npx` (Node.js), and a Google Gemini API key.
+**Note:** Requires `git`, `npx` (Node.js), and a Google Gemini API key.
 
 ---
 
@@ -101,38 +67,29 @@ Note: Requires `git`, `npx` (Node.js), and a Google Gemini API key.
 Run `chill-vibe` on your project directory:
 
 ```bash
-chill-vibe . [cite_start]--agent gemini-cli --thinking HIGH [cite: 51]
-
+chill-vibe . --agent gemini-cli --thinking HIGH
 ```
 
-Key Flags 
+### Key Flags
 
-* **`--dry-run`**: Print context and mission prompt without executing.
-* **`--rollback`**: Enable automatic `git reset --hard` on failure.
-* **`--max-cost 0.5`**: Enforce a maximum budget per mission.
-* **`--doctor`**: Run a diagnostic check on your environment and API key.
-* **`--history`**: Show a summary of all past missions.
+*   **`--dry-run`**: Print context and mission prompt without executing.
+*   **`--rollback`**: Enable automatic `git reset --hard` on verification failure.
+*   **`--max-cost 0.5`**: Enforce a maximum budget per mission (in USD).
+*   **`--doctor`**: Run a diagnostic check on your environment and API key.
+*   **`--history`**: Show a summary of all past missions.
+*   **`--report`**: Show a detailed summary report of mission costs and statuses.
+*   **`--init`**: Initialize a default `.chillvibe.yaml` configuration in the current directory.
+*   **`--fix`**: Automatically attempt to install missing dependencies identified by `--doctor`.
+*   **`--retry`**: If the agent fails, automatically request a recovery strategy and retry once.
 
 ---
 
 ## 📁 Project Structure
 
-* 
-`.chillvibe_logs.jsonl`: Logs mission details, cost, and lessons learned.
-
-
-* 
-`codebase_context.txt`: The extracted context file generated by `git-dump`.
-
-
-* 
-`.chillvibe.yaml`: Project-specific configuration.
-
-
-* 
-`src/chill_vibe/`: Core logic including CLI, reasoning, and execution.
-
-
+*   `.chillvibe_logs.jsonl`: Logs mission details, cost, and lessons learned.
+*   `codebase_context.txt`: The extracted context file generated by `git-dump`.
+*   `.chillvibe.yaml`: Project-specific configuration (created with `--init`).
+*   `src/chill_vibe/`: Core logic including CLI, reasoning, and execution.
 
 ---
 
