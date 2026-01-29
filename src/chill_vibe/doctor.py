@@ -44,6 +44,18 @@ def check_api_connectivity(api_key):
         return False, f"Connection failed: {str(e)}"
     return False, "Unknown error"
 
+def check_api_quota(api_key):
+    """Verify API health and model availability."""
+    if not genai:
+        return False, "google-genai not installed"
+    try:
+        client = genai.Client(api_key=api_key)
+        # Check if we can get model details (does not consume generation quota but verifies health)
+        client.models.get(model="gemini-1.5-flash")
+        return True, "API Quota/Health: Healthy"
+    except Exception as e:
+        return False, f"API Quota/Health: {str(e)}"
+
 def run_doctor(registry, fix=False):
     """Check environment and dependencies."""
     print("--- chill-vibe Doctor Report ---")
@@ -57,6 +69,12 @@ def run_doctor(registry, fix=False):
             success, msg = check_api_connectivity(api_key)
             if success:
                 print(f"[✓] API Connectivity: {msg}")
+                # Also check quota/health
+                q_success, q_msg = check_api_quota(api_key)
+                if q_success:
+                    print(f"[✓] {q_msg}")
+                else:
+                    print(f"[✗] {q_msg}")
             else:
                 print(f"[✗] API Connectivity: {msg}")
         else:

@@ -1,0 +1,22 @@
+# Example chill-vibe configuration for a Python project using pytest
+model: "gemini-2.0-flash-exp"
+thinking_level: "HIGH"
+
+# Agent-specific settings
+agents:
+  aider:
+    args: ["--auto-test", "--test-cmd", "pytest"]
+  gptme:
+    args: ["--non-interactive"]
+
+# Verification patterns
+verification:
+  test_patterns:
+    - "pytest tests/"
+  file_checks:
+    - "exists:tests/test_*.py"
+
+# Budget settings
+budgets:
+  total_max_cost: 1.0
+  max_iterations: 5

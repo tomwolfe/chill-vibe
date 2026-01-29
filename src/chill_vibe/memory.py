@@ -27,7 +27,7 @@ class MemoryManager:
     def __init__(self, log_path=".chillvibe_logs.jsonl"):
         self.log_path = Path(log_path)
 
-    def get_similar_failures(self, classification, signals=None, limit=3, current_prompt=None):
+    def get_similar_failures(self, classification, signals=None, limit=3, current_prompt=None, success_criteria=None):
         """Find recent failures with the same classification, ranked by keyword relevance and signals."""
         if not self.log_path.exists():
             return []
@@ -75,6 +75,15 @@ class MemoryManager:
                                     obj_text = " ".join(objectives)
                                     obj_similarity = calculate_keyword_score(current_prompt, obj_text)
                                     score += obj_similarity * 5
+
+                            # Success criteria similarity weighting
+                            if success_criteria:
+                                entry_success_criteria = entry.get("success_criteria") or []
+                                if isinstance(entry_success_criteria, list) and entry_success_criteria:
+                                    sc_text1 = " ".join(success_criteria)
+                                    sc_text2 = " ".join(entry_success_criteria)
+                                    sc_similarity = calculate_keyword_score(sc_text1, sc_text2)
+                                    score += sc_similarity * 8
                             
                             entry["relevance_score"] = score
                             failures.append(entry)
@@ -93,9 +102,9 @@ class MemoryManager:
         
         return ranked_failures[:limit]
 
-    def get_top_lessons(self, classification, signals=None, limit=3, current_prompt=None):
+    def get_top_lessons(self, classification, signals=None, limit=3, current_prompt=None, success_criteria=None):
         """Extract 'Lessons Learned' from previous failures of the same classification, ranked by relevance."""
-        failures = self.get_similar_failures(classification, signals=signals, limit=limit, current_prompt=current_prompt)
+        failures = self.get_similar_failures(classification, signals=signals, limit=limit, current_prompt=current_prompt, success_criteria=success_criteria)
         lessons = []
         for f in failures:
             lesson = f.get("lessons_learned")

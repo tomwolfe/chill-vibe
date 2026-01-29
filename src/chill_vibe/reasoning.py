@@ -7,6 +7,7 @@ from pathlib import Path
 from .constants import DEFAULT_CONFIG
 from .context import MissionContract
 from .memory import MemoryManager
+from .rules import get_global_rules
 
 try:
     from google import genai
@@ -180,6 +181,11 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     if config_data:
         project_constraints = f"\n\n--- User-Defined Project Constraints ---\n{json.dumps(config_data, indent=2)}"
 
+    global_rules = get_global_rules()
+    global_rules_str = ""
+    if global_rules:
+        global_rules_str = f"\n\n--- GLOBAL PROJECT RULES ---\n{global_rules}"
+
     # We add a clear delimiter to extract the agent prompt later
     full_prompt = (
         f"{preamble}\n\n"
@@ -200,6 +206,7 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
         "4. Success criteria must be machine-verifiable (shell commands, file checks like 'exists:path', 'contains:path regex', or 'not_contains:path regex').\n\n"
         f"--- CODEBASE CONTEXT ---\n{codebase_context}"
         f"{project_constraints}"
+        f"{global_rules_str}"
     )
     
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
@@ -379,7 +386,8 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     
     # Read history for memory using MemoryManager
     memory = MemoryManager()
-    top_lessons = memory.get_top_lessons(tentative_class, signals=signals, limit=3, current_prompt=original_prompt)
+    current_success_criteria = [res.get("criterion") for res in verification_results] if verification_results else None
+    top_lessons = memory.get_top_lessons(tentative_class, signals=signals, limit=3, current_prompt=original_prompt, success_criteria=current_success_criteria)
     
     history_context = ""
     if top_lessons:

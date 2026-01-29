@@ -101,3 +101,24 @@ def test_memory_manager_prompt_similarity(tmp_path):
     assert failures[1]["lessons_learned"] == "Similar prompt"
     assert failures[2]["lessons_learned"] == "Different prompt"
 
+def test_memory_manager_success_criteria_similarity(tmp_path):
+    log_file = tmp_path / ".chillvibe_logs.jsonl"
+    entries = [
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Different SC", "success_criteria": ["pytest tests/test_config.py"]},
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Similar SC", "success_criteria": ["pytest tests/test_memory.py", "exists:src/chill_vibe/memory.py"]},
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Exact SC match", "success_criteria": ["pytest tests/test_memory.py", "exists:src/chill_vibe/memory.py", "contains:src/chill_vibe/memory.py calculate_keyword_score"]},
+    ]
+    
+    with open(log_file, "w") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+            
+    memory = MemoryManager(log_path=str(log_file))
+    
+    current_sc = ["pytest tests/test_memory.py", "exists:src/chill_vibe/memory.py", "contains:src/chill_vibe/memory.py calculate_keyword_score"]
+    failures = memory.get_similar_failures("LOGIC", success_criteria=current_sc)
+    
+    assert failures[0]["lessons_learned"] == "Exact SC match"
+    assert failures[1]["lessons_learned"] == "Similar SC"
+    assert failures[2]["lessons_learned"] == "Different SC"
+
