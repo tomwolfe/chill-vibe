@@ -70,6 +70,39 @@ def check_api_quota(api_key: str) -> Tuple[bool, str]:
     except Exception as e:
         return False, f"API Quota/Health: {str(e)}"
 
+def check_thinking_capability(api_key: str) -> Tuple[bool, str]:
+    """Verify if the model and API key support Gemini 3 Thinking features."""
+    if not genai:
+        return False, "google-genai not installed"
+    
+    try:
+        from google.genai import types
+        client = genai.Client(api_key=api_key)
+        
+        # 1. Check if gemini-3-flash-preview is available
+        try:
+            client.models.get(model="gemini-3-flash-preview")
+            model_status = "Available"
+        except Exception:
+            model_status = "Not Found/No Access"
+            
+        # 2. Check ThinkingConfig support (Dry run)
+        # We don't actually call generate_content here to save cost, 
+        # but we check if we can construct the config.
+        try:
+            _ = types.ThinkingConfig(include_thoughts=True, thinking_budget=1024)
+            config_status = "Supported by SDK"
+        except Exception as e:
+            config_status = f"SDK Error: {e}"
+            
+        if model_status == "Available":
+            return True, f"Gemini 3 Thinking: {model_status} ({config_status})"
+        else:
+            return False, f"Gemini 3 Thinking: {model_status} (Needed for 'high' thinking levels)"
+            
+    except Exception as e:
+        return False, f"Thinking Check Failed: {str(e)}"
+
 def run_doctor(registry: Dict[str, CodingAgent], fix: bool = False) -> None:
     """Check environment and dependencies."""
     print("--- chill-vibe Doctor Report ---")
@@ -89,6 +122,13 @@ def run_doctor(registry: Dict[str, CodingAgent], fix: bool = False) -> None:
                     print(f"[✓] {q_msg}")
                 else:
                     print(f"[✗] {q_msg}")
+                
+                # Check Gemini 3 Thinking capabilities
+                t_success, t_msg = check_thinking_capability(api_key)
+                if t_success:
+                    print(f"[✓] {t_msg}")
+                else:
+                    print(f"[!] {t_msg}")
             else:
                 print(f"[✗] API Connectivity: {msg}")
         else:

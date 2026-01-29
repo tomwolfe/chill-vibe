@@ -4,21 +4,27 @@ import time
 import json
 import sys
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple, Union
+from typing import List, Optional, Dict, Any, Tuple, Union, TYPE_CHECKING
 from .constants import DEFAULT_CONFIG
 from .models import MissionContract
 from .memory import MemoryManager
 from .rules import get_global_rules
 from .budget import BudgetTracker
 
+if TYPE_CHECKING:
+    from google.genai import Client, types
+else:
+    Client = Any
+    types = Any
+
 genai: Optional[Any] = None
-types: Optional[Any] = None
+_types_module: Optional[Any] = None
 
 try:
     from google import genai as _genai
-    from google.genai import types as _types 
+    from google.genai import types as _types_mod
     genai = _genai
-    types = _types
+    _types_module = _types_mod
 except ImportError:
     pass
 
@@ -126,7 +132,7 @@ def validate_mission(mission_contract: MissionContract, codebase_context: str, m
     if genai is None:
         return True, ""
 
-    client = genai.Client()
+    client: "Client" = genai.Client()
     
     mission_json_str = mission_contract.model_dump_json(indent=2)
 
@@ -144,7 +150,7 @@ def validate_mission(mission_contract: MissionContract, codebase_context: str, m
     )
 
     try:
-        response = client.models.generate_content(
+        response: "types.GenerateContentResponse" = client.models.generate_content(
             model=model_id,
             contents=prompt
         )
@@ -175,12 +181,10 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
     if not os.environ.get("GEMINI_API_KEY"):
         print("Warning: GEMINI_API_KEY environment variable not set.")
 
-    if genai is None:
+    if genai is None or _types_module is None:
         print("Error: google-genai SDK not found. Please run 'pip install google-genai'.")
         sys.exit(1)
 
-    client = genai.Client()
-    
     preamble = (
         "Critically analyze this project (attached), then give it a grade. "
         "When grading, specifically look for 'Logic Regressions' and 'Type Safety'. "
@@ -199,15 +203,16 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
     # Get successful mission patterns for context
     memory = MemoryManager()
     # We use a broad search for COMPLETED missions to show "what works"
-    successful_missions = memory.get_similar_missions(statuses=["COMPLETED"], limit=2)
+    search_prompt = preamble
+    if config_data:
+        search_prompt += f" {json.dumps(config_data)}"
+    
+    success_patterns = memory.get_success_patterns(current_prompt=search_prompt, limit=5)
     history_context = ""
-    if successful_missions:
-        history_context = "\n\n--- SUCCESSFUL MISSION EXAMPLES ---\n"
-        for i, entry in enumerate(successful_missions, 1):
-            history_context += f"Example {i}:\n"
-            history_context += f"  Summary: {entry.get('summary', 'N/A')}\n"
-            history_context += f"  Objectives: {', '.join(entry.get('objectives', []))}\n"
-            history_context += f"  Success Criteria: {', '.join(entry.get('success_criteria', []))}\n"
+    if success_patterns:
+        history_context = "\n\n--- SUCCESSFUL MISSION PATTERNS (Proven Success Criteria) ---\n"
+        for pattern in success_patterns:
+            history_context += f"- {pattern}\n"
 
     # We add a clear delimiter to extract the agent prompt later
     full_prompt = (
@@ -239,8 +244,8 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
     thinking_budget = budgets.get(thinking_level.upper(), budgets["HIGH"])
 
     # Update config with thinking budget
-    config = types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(
+    config = _types_module.GenerateContentConfig(
+        thinking_config=_types_module.ThinkingConfig(
             include_thoughts=True,
             thinking_budget=thinking_budget
         )
@@ -248,8 +253,10 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
     
     max_retries = 3
     retry_delay = 5
-    response = None
+    response: Optional["types.GenerateContentResponse"] = None
     
+    client: "Client" = genai.Client()
+
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
@@ -366,7 +373,7 @@ def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, f
         print("Error: google-genai SDK not found.")
         sys.exit(1)
 
-    client = genai.Client()
+    client: "Client" = genai.Client()
     
     signals = classify_failure_signals(exit_code, failure_output) if exit_code is not None else []
     signals_str = ", ".join(signals) if signals else "NONE"
@@ -456,7 +463,7 @@ def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, f
     print(f"[*] Requesting recovery strategy from {model_id}...")
     
     try:
-        response = client.models.generate_content(
+        response: "types.GenerateContentResponse" = client.models.generate_content(
             model=model_id,
             contents=prompt
         )

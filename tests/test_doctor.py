@@ -1,6 +1,6 @@
 import os
 from unittest.mock import MagicMock, patch
-from chill_vibe.doctor import check_api_connectivity, check_api_quota, run_doctor
+from chill_vibe.doctor import check_api_connectivity, check_api_quota, run_doctor, check_thinking_capability
 
 @patch("chill_vibe.doctor.genai")
 def test_check_api_connectivity(mock_genai):
@@ -25,6 +25,20 @@ def test_check_api_quota(mock_genai):
     success, msg = check_api_quota("AIzaTestKey")
     assert success is True
     assert "Healthy" in msg
+
+@patch("chill_vibe.doctor.genai")
+def test_check_thinking_capability(mock_genai):
+    mock_client = MagicMock()
+    mock_genai.Client.return_value = mock_client
+    
+    # Mock successful model access
+    mock_client.models.get.return_value = MagicMock()
+    
+    with patch("google.genai.types.ThinkingConfig", return_value=MagicMock()):
+        success, msg = check_thinking_capability("AIzaTestKey")
+        assert success is True
+        assert "Available" in msg
+        assert "Supported by SDK" in msg
 
 @patch("chill_vibe.doctor.genai")
 @patch("chill_vibe.doctor.check_api_connectivity")

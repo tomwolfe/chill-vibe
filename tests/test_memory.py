@@ -122,3 +122,25 @@ def test_memory_manager_success_criteria_similarity(tmp_path):
     assert failures[1]["lessons_learned"] == "Similar SC"
     assert failures[2]["lessons_learned"] == "Different SC"
 
+def test_memory_manager_get_success_patterns(tmp_path):
+    log_file = tmp_path / ".chillvibe_logs.jsonl"
+    entries = [
+        {"status": "COMPLETED", "success_criteria": ["exists:file1", "pytest test1.py"], "agent_prompt": "Task A"},
+        {"status": "COMPLETED", "success_criteria": ["exists:file2", "pytest test2.py"], "agent_prompt": "Task B"},
+        {"status": "FAILED", "success_criteria": ["exists:file3"], "agent_prompt": "Task C"},
+    ]
+    
+    with open(log_file, "w") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+            
+    memory = MemoryManager(log_path=str(log_file))
+    
+    patterns = memory.get_success_patterns(limit=5)
+    assert "exists:file1" in patterns
+    assert "pytest test1.py" in patterns
+    assert "exists:file2" in patterns
+    assert "pytest test2.py" in patterns
+    assert "exists:file3" not in patterns
+    assert len(patterns) == 4
+

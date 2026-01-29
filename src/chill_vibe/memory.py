@@ -134,3 +134,21 @@ class MemoryManager:
             if lesson:
                 lessons.append(str(lesson))
         return lessons
+
+    def get_success_patterns(self, current_prompt: Optional[str] = None, limit: int = 3) -> List[str]:
+        """Extract 'Success Criteria' patterns from completed missions."""
+        successes = self.get_similar_missions(
+            statuses=["COMPLETED"],
+            limit=limit,
+            current_prompt=current_prompt
+        )
+        patterns = []
+        seen = set()
+        for s in successes:
+            criteria = s.get("success_criteria")
+            if criteria and isinstance(criteria, list):
+                for c in criteria:
+                    if c not in seen:
+                        patterns.append(str(c))
+                        seen.add(c)
+        return patterns
