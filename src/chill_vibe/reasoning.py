@@ -186,9 +186,15 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
         sys.exit(1)
 
     preamble = (
-        "Critically analyze this project (attached), then give it a grade. "
-        "When grading, specifically look for 'Logic Regressions' and 'Type Safety'. "
-        "I would like a prompt to give a coding agent to have the agent autonomously work on the attached codebase to achieve its goals for the project. "
+        "You are the 'Reliability Layer' for an autonomous coding agent. Your task is not just to analyze this codebase, but to design a foolproof, verifiable mission that will transform unpredictable agent behavior into a reliable, auditable workflow. "
+        "Critically analyze the attached codebase context, identifying potential 'Logic Regressions' and 'Type Safety' issues as foundational risks. "
+        "Then, construct a Mission Contract that enforces a closed-loop control system: "
+        "1. Define clear, unambiguous Objectives and Non-goals. "
+        "2. Specify machine-verifiable Success Criteria (e.g., `exists:`, `pytest`, `coverage:`, `contains:`) that can be automatically checked. "
+        "3. Generate a precise, checklist-driven Agent Prompt that the agent will execute without ambiguity. "
+        "4. Include a concise Summary that encapsulates the mission's purpose. "
+        "Your output must be structured as a JSON object within <mission_contract> tags, containing the keys: 'objectives', 'non_goals', 'success_criteria', 'agent_prompt', 'summary'. "
+        "Prioritize determinism, testability, and safety above all else. The agent's success depends on the precision of this contract."
     )
     
     project_constraints = ""
