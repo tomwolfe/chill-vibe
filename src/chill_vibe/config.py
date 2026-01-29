@@ -1,10 +1,12 @@
 import json
 import yaml
 from pathlib import Path
+from typing import Dict, Any, List, Optional, Union
 from .execution import CodingAgent
 from .constants import DEFAULT_CONFIG
+from .models import ProjectConfig, AgentConfig
 
-DEFAULT_AGENTS = {
+DEFAULT_AGENTS: Dict[str, Dict[str, Any]] = {
     "gemini-cli": {
         "command": ["npx", "@google/gemini-cli", "--yolo"],
         "dependencies": ["npx"]
@@ -27,9 +29,9 @@ DEFAULT_AGENTS = {
     }
 }
 
-VALID_CONFIG_KEYS = {"agents", "extra_args", "model", "thinking_level", "exclude_patterns", "depth", "include_ext", "protected_files", "max_cost"}
+VALID_CONFIG_KEYS = set(ProjectConfig.model_fields.keys())
 
-def load_config(repo_path):
+def load_config(repo_path: Union[str, Path]) -> Dict[str, Any]:
     """Load project configuration from .chillvibe.json or .chillvibe.yaml/.yml."""
     for ext in [".json", ".yaml", ".yml"]:
         config_path = Path(repo_path) / f".chillvibe{ext}"
@@ -42,20 +44,20 @@ def load_config(repo_path):
                         config = yaml.safe_load(f)
                     
                     if isinstance(config, dict):
-                        unknown_keys = set(config.keys()) - VALID_CONFIG_KEYS
-                        if unknown_keys:
-                            print(f"[!] Warning: Unknown keys in {config_path.name}: {', '.join(unknown_keys)}")
-                    return config
+                        # Validate with Pydantic
+                        validated_config = ProjectConfig(**config)
+                        return validated_config.model_dump(exclude_unset=True)
+                    return {}
             except Exception as e:
                 print(f"[!] Warning: Could not parse project config: {e}")
     return {}
 
-def get_agent_registry(repo_path=None):
+def get_agent_registry(repo_path: Optional[Union[str, Path]] = None) -> Dict[str, CodingAgent]:
     """Load and merge agent configurations from defaults, global, and local files."""
     # Start with default agents
     registry = {name: CodingAgent(name, **cfg) for name, cfg in DEFAULT_AGENTS.items()}
     
-    def merge_agents(data, target_registry):
+    def merge_agents(data: Dict[str, Any], target_registry: Dict[str, CodingAgent]) -> None:
         if not isinstance(data, dict):
             return
             
@@ -75,9 +77,16 @@ def get_agent_registry(repo_path=None):
                     
                     # Create or update agent
                     # We extract only the keys CodingAgent.__init__ expects
-                    valid_keys = {"command", "dependencies", "env"}
-                    agent_args = {k: v for k, v in cfg.items() if k in valid_keys}
-                    target_registry[name] = CodingAgent(name, **agent_args)
+                    try:
+                        agent_cfg = AgentConfig(**cfg)
+                        target_registry[name] = CodingAgent(
+                            name, 
+                            command=agent_cfg.command, 
+                            dependencies=agent_cfg.dependencies,
+                            env=agent_cfg.env
+                        )
+                    except Exception as e:
+                        print(f"[!] Warning: Invalid agent config for '{name}': {e}")
 
     # 1. Load global config: ~/.chillvibe/agents.yaml
     global_config_path = Path.home() / ".chillvibe" / "agents.yaml"
@@ -85,7 +94,8 @@ def get_agent_registry(repo_path=None):
         try:
             with open(global_config_path, "r") as f:
                 global_data = yaml.safe_load(f)
-                merge_agents(global_data, registry)
+                if isinstance(global_data, dict):
+                    merge_agents(global_data, registry)
         except Exception as e:
             print(f"[!] Warning: Could not parse global agent config: {e}")
 
@@ -97,9 +107,9 @@ def get_agent_registry(repo_path=None):
                     
     return registry
 
-def get_global_config():
+def get_global_config() -> Dict[str, Any]:
     """Fetch global configuration from ~/.chillvibe/config.yaml or agents.yaml."""
-    config = {}
+    config: Dict[str, Any] = {}
     
     # Check config.yaml first, then fall back to agents.yaml for backward compatibility
     for filename in ["config.yaml", "agents.yaml"]:
@@ -115,12 +125,12 @@ def get_global_config():
                 pass
     return config
 
-def get_default_model():
+def get_default_model() -> str:
     """Fetch default model from global config or return standard default."""
     global_config = get_global_config()
-    return global_config.get("default_model", DEFAULT_CONFIG["model"])
+    return str(global_config.get("default_model", DEFAULT_CONFIG["model"]))
 
-def init_project(repo_path):
+def init_project(repo_path: Union[str, Path]) -> bool:
     """Create a default .chillvibe.yaml in the current directory."""
     config_path = Path(repo_path) / ".chillvibe.yaml"
     if config_path.exists():

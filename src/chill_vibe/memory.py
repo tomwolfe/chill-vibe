@@ -1,15 +1,16 @@
 import json
 import re
 from pathlib import Path
+from typing import Set, List, Dict, Any, Optional, Union
 
-def extract_keywords(text):
+def extract_keywords(text: str) -> Set[str]:
     """Extract significant keywords from text for ranking."""
     if not text:
         return set()
     # Extract alphanumeric words >= 3 chars, lowercase
     return set(re.findall(r'\b\w{3,}\b', text.lower()))
 
-def calculate_keyword_score(text1, text2):
+def calculate_keyword_score(text1: str, text2: str) -> float:
     """Calculate overlap score between two texts based on keywords."""
     if not text1 or not text2:
         return 0.0
@@ -24,16 +25,16 @@ def calculate_keyword_score(text1, text2):
 class MemoryManager:
     """Manages failure memory by analyzing log files."""
     
-    def __init__(self, log_path=".chillvibe_logs.jsonl"):
+    def __init__(self, log_path: Union[str, Path] = ".chillvibe_logs.jsonl") -> None:
         self.log_path = Path(log_path)
 
-    def get_similar_failures(self, classification, signals=None, limit=3, current_prompt=None, success_criteria=None):
+    def get_similar_failures(self, classification: str, signals: Optional[Union[List[str], Set[str]]] = None, limit: int = 3, current_prompt: Optional[str] = None, success_criteria: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Find recent failures with the same classification, ranked by keyword relevance and signals."""
         if not self.log_path.exists():
             return []
             
-        signals = set(signals or [])
-        failures = []
+        signals_set = set(signals or [])
+        failures: List[Dict[str, Any]] = []
         
         # Define signal weights
         SIGNAL_WEIGHTS = {
@@ -55,10 +56,10 @@ class MemoryManager:
                             
                             # Calculate relevance score based on weighted signal matching
                             entry_signals = entry.get("signals") or []
-                            score = 0
-                            if signals:
+                            score = 0.0
+                            if signals_set:
                                 # Count matches with weights
-                                for s in signals:
+                                for s in signals_set:
                                     if s in entry_signals:
                                         # High priority: matching signals are strong indicators
                                         score += SIGNAL_WEIGHTS.get(s, 2) * 2
@@ -96,18 +97,18 @@ class MemoryManager:
         # We sort by score descending, then by original order (which is chronological) reversed
         ranked_failures = sorted(
             failures, 
-            key=lambda x: (x.get("relevance_score", 0), failures.index(x)), 
+            key=lambda x: (float(x.get("relevance_score", 0.0)), failures.index(x)), 
             reverse=True
         )
         
         return ranked_failures[:limit]
 
-    def get_top_lessons(self, classification, signals=None, limit=3, current_prompt=None, success_criteria=None):
+    def get_top_lessons(self, classification: str, signals: Optional[Union[List[str], Set[str]]] = None, limit: int = 3, current_prompt: Optional[str] = None, success_criteria: Optional[List[str]] = None) -> List[str]:
         """Extract 'Lessons Learned' from previous failures of the same classification, ranked by relevance."""
         failures = self.get_similar_failures(classification, signals=signals, limit=limit, current_prompt=current_prompt, success_criteria=success_criteria)
         lessons = []
         for f in failures:
             lesson = f.get("lessons_learned")
             if lesson:
-                lessons.append(lesson)
+                lessons.append(str(lesson))
         return lessons

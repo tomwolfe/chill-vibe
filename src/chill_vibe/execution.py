@@ -10,13 +10,14 @@ import re
 import hashlib
 import fnmatch
 from pathlib import Path
+from typing import List, Optional, Dict, Any, Tuple, Deque, Iterator, Union, TextIO
 
 import time
 import collections
 import contextlib
 
 @contextlib.contextmanager
-def raw_mode(file):
+def raw_mode(file: TextIO) -> Iterator[None]:
     if not file.isatty():
         yield
         return
@@ -30,7 +31,7 @@ def raw_mode(file):
         # Restore terminal settings regardless of what happens
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-def forward_stdin(process):
+def forward_stdin(process: subprocess.Popen[str]) -> None:
     """Thread function to forward system stdin to the subprocess stdin."""
     log_file = os.path.join(os.getcwd(), ".chillvibe_debug.log")
     try:
@@ -44,8 +45,9 @@ def forward_stdin(process):
                         char = sys.stdin.read(1)
                         if not char:
                             break
-                        process.stdin.write(char)
-                        process.stdin.flush()
+                        if process.stdin:
+                            process.stdin.write(char)
+                            process.stdin.flush()
                 except (EOFError, BrokenPipeError, OSError):
                     break
                 except Exception:
@@ -66,10 +68,10 @@ def forward_stdin(process):
         except Exception:
             pass
 
-def output_reader(pipe, stream, buffer):
+def output_reader(pipe: Iterator[str], stream: TextIO, buffer: Deque[str]) -> None:
     """Read from a pipe and write to both a stream and a circular buffer."""
     try:
-        for line in iter(pipe.readline, ''):
+        for line in pipe:
             if line:
                 stream.write(line)
                 stream.flush()
@@ -79,15 +81,15 @@ def output_reader(pipe, stream, buffer):
 
 class CodingAgent:
     """Represents a coding agent that can be executed."""
-    def __init__(self, name, command, dependencies=None, env=None):
+    def __init__(self, name: str, command: List[str], dependencies: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None) -> None:
         self.name = name
         self.command = command
         self.dependencies = dependencies or []
         self.env = env or {}
-        self.extra_args = []
-        self.last_output = collections.deque(maxlen=50)
+        self.extra_args: List[str] = []
+        self.last_output: Deque[str] = collections.deque(maxlen=50)
 
-    def validate(self):
+    def validate(self) -> List[str]:
         """Check if all dependencies for this agent are installed."""
         missing = []
         for dep in self.dependencies:
@@ -95,7 +97,7 @@ class CodingAgent:
                 missing.append(dep)
         return missing
 
-    def run(self, agent_prompt):
+    def run(self, agent_prompt: str) -> int:
         """Launch the coding agent with the provided prompt."""
         print(f"[*] Launching {self.name} in autonomous mode...")
         
@@ -116,25 +118,28 @@ class CodingAgent:
             env=run_env
         )
         
-        # 1. Pipe the initial agent prompt
-        process.stdin.write(agent_prompt + "\n")
-        process.stdin.flush()
+        if process.stdin:
+            # 1. Pipe the initial agent prompt
+            process.stdin.write(agent_prompt + "\n")
+            process.stdin.flush()
         
         # 2. Start a background thread to forward user input to the agent
         threading.Thread(target=forward_stdin, args=(process,), daemon=True).start()
         
         # 3. Start a background thread to capture and display output
-        reader_thread = threading.Thread(
-            target=output_reader, 
-            args=(process.stdout, sys.stdout, self.last_output),
-            daemon=True
-        )
-        reader_thread.start()
+        if process.stdout:
+            reader_thread = threading.Thread(
+                target=output_reader, 
+                args=(process.stdout, sys.stdout, self.last_output),
+                daemon=True
+            )
+            reader_thread.start()
         
         try:
             exit_code = process.wait()
-            # Give the reader thread a moment to finish capturing output
-            reader_thread.join(timeout=1)
+            if process.stdout:
+                # Give the reader thread a moment to finish capturing output
+                time.sleep(0.1) 
             return exit_code
         except KeyboardInterrupt:
             print(f"[*] chill-vibe: Terminating {self.name}...")
@@ -145,7 +150,7 @@ class CodingAgent:
                 process.kill()
             return 130 # Standard exit code for SIGINT
 
-def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
+def run_coding_agent(agent_name: str, agent_prompt: str, registry: Dict[str, CodingAgent], config_data: Optional[Dict[str, Any]] = None) -> int:
     """Phase C: Autonomous Execution"""
     if agent_name not in registry:
         print(f"Unknown agent: {agent_name}")
@@ -157,7 +162,7 @@ def run_coding_agent(agent_name, agent_prompt, registry, config_data=None):
         
     return agent.run(agent_prompt)
 
-def get_git_head(repo_path):
+def get_git_head(repo_path: str) -> Optional[str]:
     """Get the current git HEAD commit hash."""
     try:
         process = subprocess.run(
@@ -173,7 +178,7 @@ def get_git_head(repo_path):
         pass
     return None
 
-def git_rollback(repo_path, commit_hash):
+def git_rollback(repo_path: str, commit_hash: Optional[str]) -> bool:
     """Rollback the repository to a specific commit."""
     if not commit_hash:
         return False
@@ -195,7 +200,7 @@ def git_rollback(repo_path, commit_hash):
         print(f"[!] Rollback failed: {e}")
         return False
 
-def get_file_hash(file_path):
+def get_file_hash(file_path: Union[str, Path]) -> Optional[str]:
     """Calculate the MD5 hash of a file."""
     hash_md5 = hashlib.md5()
     try:
@@ -206,9 +211,9 @@ def get_file_hash(file_path):
     except Exception:
         return None
 
-def get_file_baseline(repo_path):
+def get_file_baseline(repo_path: str) -> Dict[str, Optional[str]]:
     """Get a dictionary of all files and their hashes."""
-    baseline = {}
+    baseline: Dict[str, Optional[str]] = {}
     for root, dirs, files in os.walk(repo_path):
         # Skip .git and __pycache__
         if ".git" in dirs:
@@ -221,9 +226,9 @@ def get_file_baseline(repo_path):
             baseline[rel_path] = get_file_hash(os.path.join(root, file))
     return baseline
 
-def verify_success(success_criteria, repo_path, file_baseline=None, protected_files=None):
+def verify_success(success_criteria: List[str], repo_path: str, file_baseline: Optional[Dict[str, Optional[str]]] = None, protected_files: Optional[List[str]] = None) -> Tuple[bool, List[Dict[str, Any]]]:
     """Run machine-verifiable success criteria (shell commands or invariants)."""
-    results = []
+    results: List[Dict[str, Any]] = []
     all_passed = True
     
     # 1. Automatic Invariants (e.g., no_clobber)
@@ -237,10 +242,10 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
             # For now, assume exact paths for simplicity, or we can use fnmatch
             matched_files = fnmatch.filter(current_baseline.keys(), pf)
             for f in matched_files:
-                if f in file_baseline and current_baseline[f] != file_baseline[f]:
+                if f in (file_baseline or {}) and current_baseline[f] != (file_baseline or {})[f]:
                     clobbered.append(f)
         
-        result = {
+        result: Dict[str, Any] = {
             "criterion": "no_clobber",
             "passed": len(clobbered) == 0,
             "message": f"Protected files modified: {', '.join(clobbered)}" if clobbered else "No protected files modified",
@@ -290,8 +295,8 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
                     passed = False
                     message = f"File {file_path_str} does not exist"
                 else:
-                    with open(file_path, 'r') as f:
-                        content = f.read()
+                    with open(file_path, 'r') as file_handle:
+                        content = file_handle.read()
                         # Use multiline search for better matching in files
                         match = re.search(regex_pattern, content, re.MULTILINE | re.DOTALL)
                         if is_negative:
@@ -306,19 +311,20 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
                 result["details"] = {"file": file_path_str, "pattern": regex_pattern}
 
             elif criterion == "no_new_files":
+                new_files: List[str] = []
                 if file_baseline is None:
                     passed = True
                     message = "No file baseline provided for comparison"
                 else:
                     current_files = set(get_file_baseline(repo_path).keys())
                     baseline_files = set(file_baseline.keys())
-                    new_files = current_files - baseline_files
+                    new_files = list(current_files - baseline_files)
                     passed = len(new_files) == 0
                     message = f"New files detected: {', '.join(new_files)}" if not passed else "No new files detected"
                 
                 result["passed"] = passed
                 result["message"] = message
-                result["details"] = {"new_files": list(new_files) if file_baseline is not None else []}
+                result["details"] = {"new_files": new_files}
 
             elif criterion.startswith("pytest"):
                 # Run pytest
@@ -349,9 +355,9 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
                         "Path": Path,
                         "repo_path": repo_path
                     }
-                    passed = eval(code, {"__builtins__": __builtins__}, context)
-                    result["passed"] = bool(passed)
-                    result["message"] = f"Eval '{code}' returned {passed}"
+                    passed_val = eval(code, {"__builtins__": __builtins__}, context)
+                    result["passed"] = bool(passed_val)
+                    result["message"] = f"Eval '{code}' returned {passed_val}"
                 except Exception as e:
                     result["passed"] = False
                     result["message"] = f"Eval error: {e}"
@@ -437,7 +443,7 @@ def verify_success(success_criteria, repo_path, file_baseline=None, protected_fi
             
     return all_passed, results
 
-def get_change_summary(repo_path):
+def get_change_summary(repo_path: str) -> str:
     """Generate a summary of changes using git diff."""
     try:
         # Check if it's a git repo
@@ -477,7 +483,7 @@ def get_change_summary(repo_path):
     except Exception as e:
         return f"Error generating change summary: {e}"
 
-def calculate_diff_stats(repo_path):
+def calculate_diff_stats(repo_path: str) -> Optional[Dict[str, int]]:
     """Calculate the number of lines added and removed using git diff."""
     try:
         if not os.path.exists(os.path.join(repo_path, ".git")):

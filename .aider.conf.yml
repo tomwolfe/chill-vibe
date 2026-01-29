@@ -1,0 +1,2 @@
+auto-test: true
+read: [codebase_context.txt]

@@ -2,18 +2,20 @@ import os
 import sys
 import shutil
 import subprocess
+from typing import Dict, List, Optional, Tuple, Any, cast
+from .execution import CodingAgent
 
 try:
     from google import genai
 except ImportError:
-    genai = None
+    genai = cast(Any, None)
 
 try:
     import git_dump
 except ImportError:
-    git_dump = None
+    git_dump = cast(Any, None)
 
-def install_package(package_name):
+def install_package(package_name: str) -> bool:
     """Attempt to install a python package using the current interpreter."""
     print(f"[*] Attempting to install {package_name}...")
     try:
@@ -24,7 +26,7 @@ def install_package(package_name):
         print(f"[✗] Failed to install {package_name}: {e}")
         return False
 
-def check_api_connectivity(api_key):
+def check_api_connectivity(api_key: str) -> Tuple[bool, str]:
     """Verify that the Gemini API key is functional."""
     if not genai:
         return False, "google-genai not installed"
@@ -44,7 +46,7 @@ def check_api_connectivity(api_key):
         return False, f"Connection failed: {str(e)}"
     return False, "Unknown error"
 
-def check_api_quota(api_key):
+def check_api_quota(api_key: str) -> Tuple[bool, str]:
     """Verify API health and model availability."""
     if not genai:
         return False, "google-genai not installed"
@@ -56,7 +58,7 @@ def check_api_quota(api_key):
     except Exception as e:
         return False, f"API Quota/Health: {str(e)}"
 
-def run_doctor(registry, fix=False):
+def run_doctor(registry: Dict[str, CodingAgent], fix: bool = False) -> None:
     """Check environment and dependencies."""
     print("--- chill-vibe Doctor Report ---")
     
@@ -99,7 +101,16 @@ def run_doctor(registry, fix=False):
         if fix or input("[?] Would you like to attempt to install google-genai? (y/n): ").lower() == 'y':
             install_package("google-genai")
 
-    # 2b. Check Node.js and NPM
+    # 2b. Check Static Analysis Tools
+    for tool in ["mypy", "ruff"]:
+        if shutil.which(tool):
+            print(f"[✓] {tool}: Installed")
+        else:
+            print(f"[✗] {tool}: Not installed (Recommended for type safety and linting)")
+            if fix or input(f"[?] Would you like to attempt to install {tool}? (y/n): ").lower() == 'y':
+                install_package(tool)
+
+    # 2c. Check Node.js and NPM
     if shutil.which("npx"):
         print("[✓] npx: Installed")
         try:
@@ -150,7 +161,7 @@ def run_doctor(registry, fix=False):
     for agent_name, config_file in agent_configs.items():
         if not os.path.exists(config_file):
             print(f"  [!] {agent_name}: Config '{config_file}' is missing (Recommended for best performance)")
-            if fix or (sys.stdin.isatty() and input(f"  [?] Would you like to create a default '{config_file}'? (y/n): ").lower() == 'y'):
+            if fix or input(f"  [?] Would you like to create a default '{config_file}'? (y/n): ").lower() == 'y':
                 if agent_name == "aider":
                     with open(config_file, "w") as f:
                         f.write("auto-test: true\nread: [codebase_context.txt]\n")
@@ -177,7 +188,7 @@ def run_doctor(registry, fix=False):
     
     print("-" * 32)
 
-def validate_environment(agent_name, registry):
+def validate_environment(agent_name: str, registry: Dict[str, CodingAgent]) -> None:
     """Pre-flight check for dependencies"""
     if not genai:
         print("Error: google-genai SDK not found. Please run 'pip install google-genai'.")

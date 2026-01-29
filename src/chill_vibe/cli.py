@@ -2,15 +2,17 @@ import argparse
 import os
 import sys
 import time
+from typing import Dict, Any, List, Optional, Union
 from . import __version__
 from .config import get_agent_registry, load_config, get_global_config, init_project
 from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, show_report, get_recovery_strategy
-from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary, get_git_head, git_rollback, calculate_diff_stats
+from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary, get_git_head, git_rollback, calculate_diff_stats, CodingAgent
+from .models import MissionContract
 
-def get_parser(registry):
+def get_parser(registry: Dict[str, CodingAgent]) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
     parser.add_argument("path", nargs="?", help="The directory of the repo to analyze")
     parser.add_argument("--agent", default="gemini-cli", 
@@ -46,7 +48,7 @@ def get_parser(registry):
     parser.add_argument("--version", action="version", version=f"chill-vibe v{__version__}")
     return parser
 
-def resolve_config(args, config_data, global_config):
+def resolve_config(args: argparse.Namespace, config_data: Dict[str, Any], global_config: Dict[str, Any]) -> argparse.Namespace:
     """Resolve configuration hierarchy: CLI > Local > Global > Defaults."""
     # Resolve Thinking Level: CLI > Local > Global > Default
     if args.thinking is None:
@@ -69,7 +71,7 @@ def resolve_config(args, config_data, global_config):
     
     return args
 
-def main():
+def main() -> None:
     # Load registry (pass None initially to get defaults and global)
     registry = get_agent_registry()
     
@@ -114,7 +116,7 @@ def main():
     budget_tracker = BudgetTracker(max_cost=args.max_cost, model_id=args.model)
 
     # Phase A: Context Extraction
-    exclude_patterns = config_data.get("exclude_patterns", [])
+    exclude_patterns: List[str] = config_data.get("exclude_patterns", [])
     if args.exclude:
         exclude_patterns.extend([p.strip() for p in args.exclude.split(",")])
     
@@ -172,7 +174,7 @@ def main():
             file_baseline = get_file_baseline(args.path)
             
             # Capture git HEAD before execution if rollback is enabled
-            initial_head = None
+            initial_head: Optional[str] = None
             if args.rollback:
                 initial_head = get_git_head(args.path)
 
@@ -181,7 +183,7 @@ def main():
             
             # Machine-verifiable success check
             success_passed = True
-            verification_results = []
+            verification_results: List[Dict[str, Any]] = []
             if exit_code == 0:
                 success_passed, verification_results = verify_success(mission.success_criteria, args.path, file_baseline=file_baseline, protected_files=config_data.get("protected_files"))
                 if not success_passed:
@@ -193,20 +195,21 @@ def main():
                 git_rollback(args.path, initial_head)
 
             # Structured Recovery Loop
-            classification = None
-            lessons_learned = None
-            signals = None
+            classification: Optional[str] = None
+            lessons_learned: Optional[str] = None
+            signals: Optional[List[str]] = None
 
             if exit_code != 0 and exit_code != 130:
                 from .reasoning import classify_failure_signals
                 agent = registry[args.agent]
-                failure_output = "".join(list(agent.last_output))
-                signals = classify_failure_signals(exit_code, failure_output)
+                failure_output_list = list(agent.last_output)
+                signals = classify_failure_signals(exit_code, failure_output_list)
 
             if exit_code != 0 and exit_code != 130 and args.retry:
-                max_retries = config_data.get("max_retries") or global_config.get("max_retries") or DEFAULT_CONFIG.get("max_retries", 1)
+                raw_max_retries = config_data.get("max_retries") or global_config.get("max_retries") or DEFAULT_CONFIG.get("max_retries", 1)
+                max_retries = int(str(raw_max_retries))
                 retry_count = 0
-                last_classification = None
+                last_classification: Optional[str] = None
                 
                 while retry_count < max_retries and exit_code != 0 and exit_code != 130:
                     # Check budget before each retry
@@ -223,12 +226,12 @@ def main():
 
                     # Classify and recover
                     agent = registry[args.agent]
-                    failure_output = "".join(list(agent.last_output))
+                    failure_output_list = list(agent.last_output)
                     recovery_prompt, classification, lessons_learned, signals = get_recovery_strategy(
                         args.path, 
                         args.model, 
                         mission.agent_prompt, 
-                        failure_output, 
+                        failure_output_list, 
                         exit_code=exit_code,
                         config_data=config_data,
                         verification_results=verification_results,

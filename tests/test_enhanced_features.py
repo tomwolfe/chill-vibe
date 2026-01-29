@@ -5,11 +5,13 @@ import sys
 from pathlib import Path
 import json
 import re
+from pydantic import ValidationError
 
 # Add src to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from chill_vibe import execution, reasoning, context
+from chill_vibe.models import MissionContract
 
 class TestEnhancedFeatures(unittest.TestCase):
 
@@ -38,53 +40,45 @@ class TestEnhancedFeatures(unittest.TestCase):
         self.assertTrue(valid)
 
         # Missing objectives
-        mission_invalid = context.MissionContract(
-            objectives=[],
-            success_criteria=["exists: file.txt"],
-            agent_prompt="Prompt"
-        )
-        valid, msg = mission_invalid.validate()
-        self.assertFalse(valid)
-        self.assertIn("at least one objective", msg)
+        with self.assertRaises(ValidationError):
+            context.MissionContract(
+                objectives=[],
+                success_criteria=["exists: file.txt"],
+                agent_prompt="Prompt"
+            )
 
         # Objectives not a list
-        mission_invalid = context.MissionContract(
-            objectives="not a list",
-            success_criteria=["exists: file.txt"],
-            agent_prompt="Prompt"
-        )
-        valid, msg = mission_invalid.validate()
-        self.assertFalse(valid)
+        with self.assertRaises(ValidationError):
+            context.MissionContract(
+                objectives="not a list",
+                success_criteria=["exists: file.txt"],
+                agent_prompt="Prompt"
+            )
 
         # Success criteria not a list
-        mission_invalid = context.MissionContract(
-            objectives=["Goal 1"],
-            success_criteria="not a list",
-            agent_prompt="Prompt"
-        )
-        valid, msg = mission_invalid.validate()
-        self.assertFalse(valid)
+        with self.assertRaises(ValidationError):
+            context.MissionContract(
+                objectives=["Goal 1"],
+                success_criteria="not a list",
+                agent_prompt="Prompt"
+            )
 
         # Empty agent prompt
-        mission_invalid = context.MissionContract(
-            objectives=["Goal 1"],
-            success_criteria=["exists: file.txt"],
-            agent_prompt="   "
-        )
-        valid, msg = mission_invalid.validate()
-        self.assertFalse(valid)
-        self.assertIn("non-empty agent prompt", msg)
+        with self.assertRaises(ValidationError):
+            context.MissionContract(
+                objectives=["Goal 1"],
+                success_criteria=["exists: file.txt"],
+                agent_prompt="   "
+            )
 
     def test_mission_contract_validation_success_criteria_type(self):
         # Success criterion not a string
-        mission_invalid = context.MissionContract(
-            objectives=["Goal 1"],
-            success_criteria=[123],
-            agent_prompt="Prompt"
-        )
-        valid, msg = mission_invalid.validate()
-        self.assertFalse(valid)
-        self.assertIn("must be a string", msg)
+        with self.assertRaises(ValidationError):
+            context.MissionContract(
+                objectives=["Goal 1"],
+                success_criteria=[123],
+                agent_prompt="Prompt"
+            )
 
     @patch('chill_vibe.execution.get_file_baseline')
     def test_verify_success_no_new_files(self, mock_get_baseline):
@@ -208,10 +202,11 @@ class TestEnhancedFeatures(unittest.TestCase):
     @patch('pathlib.Path.exists', return_value=True)
     def test_log_mission_with_budget(self, mock_exists, mock_file):
         budget_report = {"total_tokens": 1234, "total_cost": 0.001}
-        mission = MagicMock()
-        mission.success_criteria = []
-        mission.agent_prompt = "Prompt"
-        mission.objectives = []
+        mission = MissionContract(
+            objectives=["Goal 1"],
+            success_criteria=["exists: file.txt"],
+            agent_prompt="Prompt"
+        )
         
         reasoning.log_mission(mission, "model", "agent", 1.0, status="COMPLETED", budget_report=budget_report)
         

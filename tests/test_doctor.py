@@ -31,7 +31,8 @@ def test_check_api_quota(mock_genai):
 @patch("chill_vibe.doctor.check_api_quota")
 @patch("shutil.which")
 @patch("subprocess.check_output")
-def test_run_doctor(mock_subprocess, mock_which, mock_quota, mock_connectivity, mock_genai):
+@patch("builtins.input", return_value="n")
+def test_run_doctor(mock_input, mock_subprocess, mock_which, mock_quota, mock_connectivity, mock_genai):
     mock_connectivity.return_value = (True, "Connected")
     mock_quota.return_value = (True, "API Quota/Health: Healthy")
     mock_which.return_value = "/usr/bin/git"

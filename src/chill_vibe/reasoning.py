@@ -4,22 +4,33 @@ import time
 import json
 import sys
 from pathlib import Path
+from typing import List, Optional, Dict, Any, Tuple, Union
 from .constants import DEFAULT_CONFIG
-from .context import MissionContract
+from .models import MissionContract
 from .memory import MemoryManager
 from .rules import get_global_rules
 
 try:
     from google import genai
-    from google.genai import types
+    from google.genai import types 
 except ImportError:
-    genai = None
-    types = None
+    genai = Any # type: ignore
+    types = Any # type: ignore
 
-def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None, lessons_learned=None, signals=None, budget_report=None, diff_stats=None):
+def log_mission(mission: Union[MissionContract, str], model_id: str, agent_name: str, duration: float, status: str = "UNKNOWN", exit_code: Optional[int] = None, classification: Optional[str] = None, verification_results: Optional[List[Dict[str, Any]]] = None, lessons_learned: Optional[str] = None, signals: Optional[List[str]] = None, budget_report: Optional[Dict[str, Any]] = None, diff_stats: Optional[Dict[str, int]] = None) -> None:
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
-    log_entry = {
+    
+    if isinstance(mission, MissionContract):
+        success_criteria = mission.success_criteria
+        agent_prompt = mission.agent_prompt
+        objectives = mission.objectives
+    else:
+        success_criteria = []
+        agent_prompt = mission
+        objectives = []
+
+    log_entry: Dict[str, Any] = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "model_id": model_id,
         "agent_name": agent_name,
@@ -29,10 +40,10 @@ def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_
         "classification": classification,
         "signals": signals,
         "lessons_learned": lessons_learned,
-        "success_criteria": mission.success_criteria if hasattr(mission, 'success_criteria') else mission,
+        "success_criteria": success_criteria,
         "verification_results": verification_results,
-        "agent_prompt": mission.agent_prompt if hasattr(mission, 'agent_prompt') else str(mission),
-        "objectives": mission.objectives if hasattr(mission, 'objectives') else [],
+        "agent_prompt": agent_prompt,
+        "objectives": objectives,
         "diff_stats": diff_stats
     }
     if budget_report:
@@ -47,7 +58,7 @@ def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_
     except Exception as e:
         print(f"[!] Warning: Could not write to log file: {e}")
 
-def show_history():
+def show_history() -> None:
     """Read and format the mission history from .chillvibe_logs.jsonl."""
     log_file = Path(".chillvibe_logs.jsonl")
     if not log_file.exists():
@@ -73,7 +84,7 @@ def show_history():
     except Exception as e:
         print(f"Error reading history: {e}")
 
-def show_report():
+def show_report() -> None:
     """Read and format a detailed summary report from .chillvibe_logs.jsonl."""
     log_file = Path(".chillvibe_logs.jsonl")
     if not log_file.exists():
@@ -105,22 +116,14 @@ def show_report():
     except Exception as e:
         print(f"Error reading report: {e}")
 
-def validate_mission(mission_contract, codebase_context, model_id, config_data=None, budget_tracker=None):
+def validate_mission(mission_contract: MissionContract, codebase_context: str, model_id: str, config_data: Optional[Dict[str, Any]] = None, budget_tracker: Any = None) -> Tuple[bool, str]:
     """Second-pass validation of the mission contract."""
     if genai is None:
         return True, ""
 
     client = genai.Client()
     
-    mission_dict = {
-        'objectives': mission_contract.objectives,
-        'success_criteria': mission_contract.success_criteria,
-        'non_goals': mission_contract.non_goals,
-        'checklist': mission_contract.checklist,
-        'forbidden_actions': mission_contract.forbidden_actions,
-        'summary': mission_contract.summary
-    }
-    mission_json_str = json.dumps(mission_dict, indent=2)
+    mission_json_str = mission_contract.model_dump_json(indent=2)
 
     prompt = (
         "You are an expert mission auditor. Review the following mission contract for a coding agent.\n\n"
@@ -143,16 +146,18 @@ def validate_mission(mission_contract, codebase_context, model_id, config_data=N
         if budget_tracker:
             budget_tracker.update_from_response(response)
 
-        result = response.text.strip()
-        if result.startswith("PASSED"):
-            return True, ""
-        else:
-            return False, result
+        if response.text:
+            result = response.text.strip()
+            if result.startswith("PASSED"):
+                return True, ""
+            else:
+                return False, result
+        return True, "" # Fallback
     except Exception as e:
         print(f"[!] Warning: Mission validation failed to run: {e}")
         return True, "" # Fallback to true if validation fails to execute
 
-def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, config_data=None, verbose=False, budget_tracker=None):
+def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, thinking_level: str, config_data: Optional[Dict[str, Any]] = None, verbose: bool = False, budget_tracker: Any = None) -> MissionContract:
     """Phase B: Strategic Reasoning"""
     if not os.path.exists(context_file):
         print(f"Error: {context_file} not found.")
@@ -211,7 +216,7 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
     
-    budgets = DEFAULT_CONFIG["budgets"]
+    budgets: Dict[str, int] = DEFAULT_CONFIG["budgets"] # type: ignore
     thinking_budget = budgets.get(thinking_level.upper(), budgets["HIGH"])
 
     # Update config with thinking budget
@@ -254,16 +259,18 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     
     if verbose:
         try:
-            for candidate in response.candidates:
-                for part in candidate.content.parts:
-                    if part.thought:
-                        print("\n--- INTERNAL THOUGHTS ---")
-                        print(f"\033[2m{part.text}\033[0m")
-                        print("-------------------------\n")
+            if response.candidates:
+                for candidate in response.candidates:
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if part.thought:
+                                print("\n--- INTERNAL THOUGHTS ---")
+                                print(f"\033[2m{part.text}\033[0m")
+                                print("-------------------------\n")
         except AttributeError:
             pass 
 
-    full_text = response.text
+    full_text = response.text or ""
     
     mission_contract_match = re.search(r"(?:```(?:json)?\s*)?<mission_contract>(.*?)</mission_contract>(?:\s*```)?", full_text, re.DOTALL)
     if not mission_contract_match:
@@ -281,18 +288,10 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
             mission_json = mission_json[:-3]
         
         mission_data = json.loads(mission_json.strip())
-        mission = MissionContract(
-            objectives=mission_data.get("objectives", []),
-            success_criteria=mission_data.get("success_criteria", []),
-            agent_prompt=mission_data.get("agent_prompt", ""),
-            non_goals=mission_data.get("non_goals", []),
-            checklist=mission_data.get("checklist", []),
-            forbidden_actions=mission_data.get("forbidden_actions", []),
-            summary=mission_data.get("summary", "")
-        )
+        mission = MissionContract(**mission_data)
         
         # Internal validation
-        is_valid, error_msg = mission.validate()
+        is_valid, error_msg = mission.validate_mission()
         if not is_valid:
             print(f"[!] Error: Mission contract validation failed: {error_msg}")
             sys.exit(1)
@@ -314,7 +313,7 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     
     return mission
 
-def classify_failure_signals(exit_code, last_output):
+def classify_failure_signals(exit_code: int, last_output: List[str]) -> List[str]:
     """Extract grounded execution signals from failure output."""
     signals = []
     
@@ -342,7 +341,7 @@ def classify_failure_signals(exit_code, last_output):
             
     return signals
 
-def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, exit_code=None, config_data=None, verification_results=None, budget_tracker=None):
+def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, failure_output: List[str], exit_code: Optional[int] = None, config_data: Optional[Dict[str, Any]] = None, verification_results: Optional[List[Dict[str, Any]]] = None, budget_tracker: Any = None) -> Tuple[str, str, Optional[str], List[str]]:
     """Generate a recovery strategy after an agent fails, with grounded classification and memory."""
     if genai is None:
         print("Error: google-genai SDK not found.")
@@ -386,7 +385,10 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     
     # Read history for memory using MemoryManager
     memory = MemoryManager()
-    current_success_criteria = [res.get("criterion") for res in verification_results] if verification_results else None
+    current_success_criteria: Optional[List[str]] = None
+    if verification_results:
+        current_success_criteria = [str(res.get("criterion")) for res in verification_results if res.get("criterion") is not None]
+    
     top_lessons = memory.get_top_lessons(tentative_class, signals=signals, limit=3, current_prompt=original_prompt, success_criteria=current_success_criteria)
     
     history_context = ""
@@ -443,9 +445,9 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
             budget_tracker.update_from_response(response)
     except Exception as e:
         print(f"Error calling Gemini API for recovery: {e}")
-        return None, "UNKNOWN", None, []
+        return "", "UNKNOWN", None, []
         
-    full_text = response.text
+    full_text = response.text or ""
     
     classification_match = re.search(r"<classification>(.*?)</classification>", full_text, re.IGNORECASE)
     classification = classification_match.group(1).strip() if classification_match else "UNKNOWN"
@@ -456,5 +458,5 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     agent_prompt_match = re.search(r"(?:```(?:xml|html)?\s*)?<agent_prompt>(.*?)</agent_prompt>(?:\s*```)?", full_text, re.DOTALL)
     recovery_prompt = agent_prompt_match.group(1).strip() if agent_prompt_match else full_text
     
-    return recovery_prompt, classification, lessons_learned, signals
+    return str(recovery_prompt), str(classification), lessons_learned, signals
 
