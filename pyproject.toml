@@ -22,7 +22,8 @@ dependencies = [
     "git-dump @ git+https://github.com/tomwolfe/git_dump.git",
     "pytest",
     "pydantic>=2.0.0",
-    "mypy"
+    "mypy",
+    "types-PyYAML"
 ]
 
 [project.scripts]

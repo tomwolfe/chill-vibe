@@ -36,7 +36,7 @@ class TestEnhancedFeatures(unittest.TestCase):
             success_criteria=["exists: file.txt"],
             agent_prompt="Prompt"
         )
-        valid, msg = mission.validate()
+        valid, msg = mission.validate_mission()
         self.assertTrue(valid)
 
         # Missing objectives

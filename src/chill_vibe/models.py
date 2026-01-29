@@ -52,10 +52,6 @@ class MissionContract(BaseModel):
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid mission JSON: {e}")
 
-    def validate(self) -> Tuple[bool, str]:
-        """Alias for validate_mission for backward compatibility."""
-        return self.validate_mission()
-
     def validate_mission(self) -> Tuple[bool, str]:
         """Validate that the mission contract is complete and testable."""
         # Pydantic already handles basic type validation and empty checks via validators
