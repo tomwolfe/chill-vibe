@@ -19,7 +19,8 @@ classifiers = [
 dependencies = [
     "google-genai",
     "pyyaml",
-    "git-dump @ git+https://github.com/tomwolfe/git_dump.git"
+    "git-dump @ git+https://github.com/tomwolfe/git_dump.git",
+    "pytest"
 ]
 
 [project.scripts]
