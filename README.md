@@ -1,20 +1,20 @@
-# chill-vibe 🎧 
+# 🎧 chill-vibe 
 
-**The Reliability Layer for Autonomous Coding Agents.**
+### **The Reliability Layer for Autonomous Coding Agents.**
 
 `chill-vibe` is a CLI orchestration layer that wraps autonomous coding agents (like Aider, Gemini-CLI, or Qwen) in a **Reasoning → Mission → Verification → Recovery** control loop. 
 
-Most coding agents fail because success is implicit and retries are blind. `chill-vibe` fixes this by treating autonomous coding as a **control system** rather than a chat interface.
+Most coding agents fail because success is implicit and retries are blind. `chill-vibe` fixes this by treating autonomous coding as a **closed-loop control system** rather than a chat interface.
 
 ---
 
 ## 🚀 Why chill-vibe?
 
-If you've used autonomous agents, you know the "Peak Brilliance vs. High Variance" problem: an agent might solve a complex refactor in one go, then spend the next hour hallucinating a fix for a syntax error it created.
+If you've used autonomous agents, you know the **"Peak Brilliance vs. High Variance"** problem: an agent might solve a complex refactor in one go, then spend the next hour hallucinating a fix for a syntax error it just created.
 
 **chill-vibe eliminates variance by enforcing:**
-*   **Explicit Mission Contracts:** No vague instructions. Gemini generates a structured JSON contract with machine-verifiable success criteria before a single line of code is written.
-*   **Automatic State Rollback:** If a mission fails verification, the system performs a `git reset --hard` to ensure the next recovery attempt starts from a clean state. No more "corrupted state" loops.
+*   **Explicit Mission Contracts:** Gemini 2.0 generates a structured JSON contract with machine-verifiable success criteria *before* a single line of code is written.
+*   **Automatic State Rollback:** If a mission fails verification, the system performs a `git reset --hard`. No more "corrupted state" loops.
 *   **Grounded Recovery:** When an agent fails, `chill-vibe` classifies the error (Logic, Tooling, Environment) and injects "Lessons Learned" from previous failures into the next attempt.
 *   **Full Context Visibility:** Uses `git-dump` to ensure the agent sees the entire architectural state, not just a few files.
 
@@ -26,7 +26,7 @@ If you've used autonomous agents, you know the "Peak Brilliance vs. High Varianc
 Aggregates your entire repository into a single, LLM-friendly context file using `git-dump`. This eliminates partial-context reasoning errors.
 
 ### 2. Strategic Reasoning (The Brain)
-Uses Gemini 2.0 to analyze the codebase and generate a **Mission Contract**:
+Uses **Gemini 2.0 (Flash or Pro)** to analyze the codebase and generate a **Mission Contract**:
 *   **Objectives & Non-goals:** Clear boundaries for the agent.
 *   **Machine-Verifiable Success Criteria:** Commands like `pytest`, `exists: path/to/file`, or `coverage: 80`.
 *   **Expert Auditor Pass:** A second-pass validation ensures the mission is testable and safe before execution.
@@ -56,11 +56,9 @@ Launches your preferred agent (Aider, Gemini-CLI, Mentat, etc.) as a subprocess.
 ## 🛠 Installation
 
 ```bash
-# Clone the repository
+# Clone and setup
 git clone https://github.com/youruser/chill-vibe.git
 cd chill-vibe
-
-# Run the setup script (creates venv and installs dependencies)
 ./setup.sh
 
 # Set your API Key
@@ -73,7 +71,7 @@ export GEMINI_API_KEY='your-api-key-here'
 
 ### Basic Command
 ```bash
-chill-vibe /path/to/your/repo --agent aider --retry --rollback
+chill-vibe . --agent aider --retry --rollback
 ```
 
 ### Key Options
@@ -81,28 +79,23 @@ chill-vibe /path/to/your/repo --agent aider --retry --rollback
 *   `--thinking`: Set reasoning depth (`LOW`, `MEDIUM`, `HIGH`).
 *   `--retry`: Enable the structured recovery loop.
 *   `--rollback`: Automatically `git reset` if verification fails.
-*   `--doctor`: Run diagnostics on your environment and agents.
 *   `--history`: View the log of past missions and failure classifications.
 
 ---
 
 ## ⚙️ Configuration
 
-Customize `chill-vibe` per project by creating a `.chillvibe.yaml` file in your repo root:
+Customize `chill-vibe` per project by creating a `.chillvibe.yaml` file:
 
 ```yaml
 model: "gemini-2.0-pro-exp-02-05"
 thinking_level: "HIGH"
-max_cost: 2.0  # Stop if mission costs > $2.00
+max_cost: 1.50  # Stop if mission costs > $1.50
 
 # Files the agent is NEVER allowed to change
 protected_files:
   - "src/auth/crypto.py"
   - "config/production.yaml"
-
-# Custom agent arguments
-extra_args:
-  - "--no-auto-commit"
 
 exclude_patterns:
   - "**/tests/data/**"
@@ -114,7 +107,7 @@ exclude_patterns:
 
 Every mission is logged to `.chillvibe_logs.jsonl`. This file isn't just for show—it's the system's **Memory**. 
 
-When a mission fails with a `LOGIC` error, `chill-vibe` searches this log for the most relevant "Lessons Learned" from previous failures and feeds them into the recovery prompt. This prevents the agent from making the same mistake twice.
+When a mission fails, `chill-vibe` searches this log for the most relevant "Lessons Learned" from previous failures (using weighted signal matching) and feeds them into the recovery prompt. This prevents the agent from making the same mistake twice.
 
 ---
 
