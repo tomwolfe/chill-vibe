@@ -78,7 +78,7 @@ Launches your preferred agent (Aider, Gemini-CLI, Mentat, etc.) as a subprocess.
 
 ```bash
 # Clone and setup
-git clone https://github.com/youruser/chill-vibe.git
+git clone https://github.com/tomwolfe/chill-vibe.git
 cd chill-vibe
 ./setup.sh
 
