@@ -304,23 +304,14 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
 
     full_text = response.text or ""
     
-    mission_contract_match = re.search(r"(?:```(?:json)?\s*)?<mission_contract>(.*?)</mission_contract>(?:\s*```)?", full_text, re.DOTALL)
+    mission_contract_match = re.search(r"<mission_contract>(.*?)</mission_contract>", full_text, re.DOTALL)
     if not mission_contract_match:
         print("[!] Error: Could not find <mission_contract> tags in response.")
         sys.exit(1)
 
     try:
         mission_json = mission_contract_match.group(1).strip()
-        # Handle cases where the model might wrap JSON in extra backticks inside the tag
-        if mission_json.startswith("```json"):
-            mission_json = mission_json[7:]
-        if mission_json.startswith("```"):
-            mission_json = mission_json[3:]
-        if mission_json.endswith("```"):
-            mission_json = mission_json[:-3]
-        
-        mission_data = json.loads(mission_json.strip())
-        mission = MissionContract(**mission_data)
+        mission = MissionContract.from_json(mission_json)
         
         # Internal validation
         is_valid, error_msg = mission.validate_mission()

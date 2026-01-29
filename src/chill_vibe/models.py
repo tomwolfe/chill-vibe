@@ -42,11 +42,23 @@ class MissionContract(BaseModel):
         return v
 
     @classmethod
-    def from_json(cls, json_str: str, agent_prompt: str) -> "MissionContract":
+    def from_json(cls, json_str: str, agent_prompt: Optional[str] = None) -> "MissionContract":
+        """
+        Parses MissionContract from a JSON string, hardening against LLM noise and markdown fences.
+        """
+        clean_json = json_str.strip()
+        
+        # Robust extraction: find first '{' and last '}' to ignore markdown fences or surrounding text
+        start_idx = clean_json.find('{')
+        end_idx = clean_json.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            clean_json = clean_json[start_idx:end_idx+1]
+
         try:
-            data = json.loads(json_str)
-            # Ensure agent_prompt is included in the data for Pydantic
-            if "agent_prompt" not in data:
+            data = json.loads(clean_json)
+            # Ensure agent_prompt is included in the data for Pydantic if not in JSON
+            if "agent_prompt" not in data and agent_prompt:
                 data["agent_prompt"] = agent_prompt
             return cls(**data)
         except json.JSONDecodeError as e:
