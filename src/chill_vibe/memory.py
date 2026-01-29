@@ -1,6 +1,25 @@
 import json
+import re
 from pathlib import Path
-from difflib import SequenceMatcher
+
+def extract_keywords(text):
+    """Extract significant keywords from text for ranking."""
+    if not text:
+        return set()
+    # Extract alphanumeric words >= 3 chars, lowercase
+    return set(re.findall(r'\b\w{3,}\b', text.lower()))
+
+def calculate_keyword_score(text1, text2):
+    """Calculate overlap score between two texts based on keywords."""
+    if not text1 or not text2:
+        return 0.0
+    kw1 = extract_keywords(text1)
+    kw2 = extract_keywords(text2)
+    if not kw1:
+        return 0.0
+    overlap = kw1.intersection(kw2)
+    # Return Jaccard-like similarity focused on the first set
+    return len(overlap) / len(kw1)
 
 class MemoryManager:
     """Manages failure memory by analyzing log files."""
@@ -9,7 +28,7 @@ class MemoryManager:
         self.log_path = Path(log_path)
 
     def get_similar_failures(self, classification, signals=None, limit=3, current_prompt=None):
-        """Find recent failures with the same classification, ranked by relevance to signals and prompt similarity."""
+        """Find recent failures with the same classification, ranked by keyword relevance and signals."""
         if not self.log_path.exists():
             return []
             
@@ -18,12 +37,12 @@ class MemoryManager:
         
         # Define signal weights
         SIGNAL_WEIGHTS = {
-            "TEST_FAILURE": 5,
-            "SYNTAX_ERROR": 5,
-            "COMMAND_NOT_FOUND": 2,
-            "DEPENDENCY_MISSING": 2,
-            "PERMISSION_DENIED": 2,
-            "TIMEOUT": 1
+            "TEST_FAILURE": 10,
+            "SYNTAX_ERROR": 10,
+            "COMMAND_NOT_FOUND": 5,
+            "DEPENDENCY_MISSING": 8,
+            "PERMISSION_DENIED": 5,
+            "TIMEOUT": 3
         }
 
         try:
@@ -41,12 +60,21 @@ class MemoryManager:
                                 # Count matches with weights
                                 for s in signals:
                                     if s in entry_signals:
-                                        score += SIGNAL_WEIGHTS.get(s, 1)
+                                        # High priority: matching signals are strong indicators
+                                        score += SIGNAL_WEIGHTS.get(s, 2) * 2
                             
-                            # Add string similarity score if prompt is provided
-                            if current_prompt and entry.get("agent_prompt"):
-                                similarity = SequenceMatcher(None, current_prompt, entry.get("agent_prompt")).ratio()
-                                score += similarity * 10 # Heavily weight prompt similarity
+                            # Keyword similarity ranking
+                            if current_prompt:
+                                # Match against agent prompt
+                                prompt_similarity = calculate_keyword_score(current_prompt, entry.get("agent_prompt", ""))
+                                score += prompt_similarity * 10 
+                                
+                                # Match against objectives for better context
+                                objectives = entry.get("objectives") or []
+                                if objectives:
+                                    obj_text = " ".join(objectives)
+                                    obj_similarity = calculate_keyword_score(current_prompt, obj_text)
+                                    score += obj_similarity * 5
                             
                             entry["relevance_score"] = score
                             failures.append(entry)

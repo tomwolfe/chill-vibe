@@ -476,3 +476,41 @@ def get_change_summary(repo_path):
         return summary
     except Exception as e:
         return f"Error generating change summary: {e}"
+
+def calculate_diff_stats(repo_path):
+    """Calculate the number of lines added and removed using git diff."""
+    try:
+        if not os.path.exists(os.path.join(repo_path, ".git")):
+            return None
+        
+        process = subprocess.run(
+            "git diff --numstat",
+            shell=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True
+        )
+        if process.returncode != 0:
+            return None
+        
+        added = 0
+        removed = 0
+        for line in process.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    # parts[0] is added, parts[1] is removed
+                    added_str = parts[0]
+                    removed_str = parts[1]
+                    
+                    if added_str != "-":
+                        added += int(added_str)
+                    if removed_str != "-":
+                        removed += int(removed_str)
+                except ValueError:
+                    # Handle binary files or other non-integer output
+                    pass
+        
+        return {"added": added, "removed": removed}
+    except Exception:
+        return None

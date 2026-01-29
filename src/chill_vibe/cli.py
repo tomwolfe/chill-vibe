@@ -8,7 +8,7 @@ from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, show_report, get_recovery_strategy
-from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary, get_git_head, git_rollback
+from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary, get_git_head, git_rollback, calculate_diff_stats
 
 def get_parser(registry):
     parser = argparse.ArgumentParser(description="chill-vibe: A Reasoning-to-Code CLI pipeline")
@@ -160,7 +160,7 @@ def main():
         print("-----------------------\n")
 
         if args.dry_run:
-            log_mission(mission, args.model, args.agent, duration, status="DRY_RUN", exit_code=0, budget_report=budget_tracker.get_usage_report())
+            log_mission(mission, args.model, args.agent, duration, status="DRY_RUN", exit_code=0, budget_report=budget_tracker.get_usage_report(), diff_stats=None)
             print("\n--- GENERATED AGENT PROMPT ---")
             print(mission.agent_prompt)
             print("\n--- SUCCESS CRITERIA ---")
@@ -273,6 +273,9 @@ def main():
             if budget_tracker.is_over_budget():
                 status = "OVER_BUDGET"
             
+            # Calculate final diff stats before logging
+            diff_stats = calculate_diff_stats(args.path)
+            
             log_mission(
                 mission, 
                 args.model, 
@@ -284,7 +287,8 @@ def main():
                 verification_results=verification_results,
                 lessons_learned=lessons_learned,
                 signals=signals,
-                budget_report=budget_tracker.get_usage_report()
+                budget_report=budget_tracker.get_usage_report(),
+                diff_stats=diff_stats
             )
             
             # Post-run summary

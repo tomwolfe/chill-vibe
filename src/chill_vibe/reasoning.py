@@ -15,7 +15,7 @@ except ImportError:
     genai = None
     types = None
 
-def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None, lessons_learned=None, signals=None, budget_report=None):
+def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_code=None, classification=None, verification_results=None, lessons_learned=None, signals=None, budget_report=None, diff_stats=None):
     """Log the mission details to a hidden file."""
     log_file = Path(".chillvibe_logs.jsonl")
     log_entry = {
@@ -31,7 +31,8 @@ def log_mission(mission, model_id, agent_name, duration, status="UNKNOWN", exit_
         "success_criteria": mission.success_criteria if hasattr(mission, 'success_criteria') else mission,
         "verification_results": verification_results,
         "agent_prompt": mission.agent_prompt if hasattr(mission, 'agent_prompt') else str(mission),
-        "objectives": mission.objectives if hasattr(mission, 'objectives') else []
+        "objectives": mission.objectives if hasattr(mission, 'objectives') else [],
+        "diff_stats": diff_stats
     }
     if budget_report:
         log_entry.update(budget_report)
@@ -171,6 +172,7 @@ def get_strategic_reasoning(repo_path, context_file, model_id, thinking_level, c
     
     preamble = (
         "Critically analyze this project (attached), then give it a grade. "
+        "When grading, specifically look for 'Logic Regressions' and 'Type Safety'. "
         "I would like a prompt to give a coding agent to have the agent autonomously work on the attached codebase to achieve its goals for the project. "
     )
     
