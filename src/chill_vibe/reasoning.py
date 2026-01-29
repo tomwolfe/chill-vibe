@@ -9,13 +9,18 @@ from .constants import DEFAULT_CONFIG
 from .models import MissionContract
 from .memory import MemoryManager
 from .rules import get_global_rules
+from .budget import BudgetTracker
+
+genai: Optional[Any] = None
+types: Optional[Any] = None
 
 try:
-    from google import genai
-    from google.genai import types 
+    from google import genai as _genai
+    from google.genai import types as _types 
+    genai = _genai
+    types = _types
 except ImportError:
-    genai = Any # type: ignore
-    types = Any # type: ignore
+    pass
 
 def log_mission(mission: Union[MissionContract, str], model_id: str, agent_name: str, duration: float, status: str = "UNKNOWN", exit_code: Optional[int] = None, classification: Optional[str] = None, verification_results: Optional[List[Dict[str, Any]]] = None, lessons_learned: Optional[str] = None, signals: Optional[List[str]] = None, budget_report: Optional[Dict[str, Any]] = None, diff_stats: Optional[Dict[str, int]] = None) -> None:
     """Log the mission details to a hidden file."""
@@ -116,7 +121,7 @@ def show_report() -> None:
     except Exception as e:
         print(f"Error reading report: {e}")
 
-def validate_mission(mission_contract: MissionContract, codebase_context: str, model_id: str, config_data: Optional[Dict[str, Any]] = None, budget_tracker: Any = None) -> Tuple[bool, str]:
+def validate_mission(mission_contract: MissionContract, codebase_context: str, model_id: str, config_data: Optional[Dict[str, Any]] = None, budget_tracker: Optional[BudgetTracker] = None) -> Tuple[bool, str]:
     """Second-pass validation of the mission contract."""
     if genai is None:
         return True, ""
@@ -157,7 +162,7 @@ def validate_mission(mission_contract: MissionContract, codebase_context: str, m
         print(f"[!] Warning: Mission validation failed to run: {e}")
         return True, "" # Fallback to true if validation fails to execute
 
-def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, thinking_level: str, config_data: Optional[Dict[str, Any]] = None, verbose: bool = False, budget_tracker: Any = None) -> MissionContract:
+def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, thinking_level: str, config_data: Optional[Dict[str, Any]] = None, verbose: bool = False, budget_tracker: Optional[BudgetTracker] = None) -> MissionContract:
     """Phase B: Strategic Reasoning"""
     if not os.path.exists(context_file):
         print(f"Error: {context_file} not found.")
@@ -191,6 +196,19 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
     if global_rules:
         global_rules_str = f"\n\n--- GLOBAL PROJECT RULES ---\n{global_rules}"
 
+    # Get successful mission patterns for context
+    memory = MemoryManager()
+    # We use a broad search for COMPLETED missions to show "what works"
+    successful_missions = memory.get_similar_missions(statuses=["COMPLETED"], limit=2)
+    history_context = ""
+    if successful_missions:
+        history_context = "\n\n--- SUCCESSFUL MISSION EXAMPLES ---\n"
+        for i, entry in enumerate(successful_missions, 1):
+            history_context += f"Example {i}:\n"
+            history_context += f"  Summary: {entry.get('summary', 'N/A')}\n"
+            history_context += f"  Objectives: {', '.join(entry.get('objectives', []))}\n"
+            history_context += f"  Success Criteria: {', '.join(entry.get('success_criteria', []))}\n"
+
     # We add a clear delimiter to extract the agent prompt later
     full_prompt = (
         f"{preamble}\n\n"
@@ -212,6 +230,7 @@ def get_strategic_reasoning(repo_path: str, context_file: str, model_id: str, th
         f"--- CODEBASE CONTEXT ---\n{codebase_context}"
         f"{project_constraints}"
         f"{global_rules_str}"
+        f"{history_context}"
     )
     
     print(f"[*] Requesting strategic reasoning from {model_id} (Thinking level: {thinking_level})...")
@@ -341,7 +360,7 @@ def classify_failure_signals(exit_code: int, last_output: List[str]) -> List[str
             
     return signals
 
-def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, failure_output: List[str], exit_code: Optional[int] = None, config_data: Optional[Dict[str, Any]] = None, verification_results: Optional[List[Dict[str, Any]]] = None, budget_tracker: Any = None) -> Tuple[str, str, Optional[str], List[str]]:
+def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, failure_output: List[str], exit_code: Optional[int] = None, config_data: Optional[Dict[str, Any]] = None, verification_results: Optional[List[Dict[str, Any]]] = None, budget_tracker: Optional[BudgetTracker] = None) -> Tuple[str, str, Optional[str], List[str]]:
     """Generate a recovery strategy after an agent fails, with grounded classification and memory."""
     if genai is None:
         print("Error: google-genai SDK not found.")

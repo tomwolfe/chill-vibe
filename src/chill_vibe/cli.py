@@ -7,6 +7,7 @@ from . import __version__
 from .config import get_agent_registry, load_config, get_global_config, init_project
 from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
+from .preflight import run_preflight_check
 from .context import run_git_dump
 from .reasoning import get_strategic_reasoning, log_mission, show_history, show_report, get_recovery_strategy
 from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary, get_git_head, git_rollback, calculate_diff_stats, CodingAgent
@@ -170,6 +171,12 @@ def main() -> None:
                 print(f"- {sc}")
             print("------------------------------")
         else:
+            # Pre-flight validation of success criteria
+            if not run_preflight_check(mission.success_criteria, args.path):
+                print("[!] Aborting mission due to pre-flight failure.")
+                log_mission(mission, args.model, args.agent, duration, status="FAILED", exit_code=1, lessons_learned="Pre-flight validation failed.")
+                sys.exit(1)
+
             # Capture baseline before execution for 'no_new_files' check
             file_baseline = get_file_baseline(args.path)
             

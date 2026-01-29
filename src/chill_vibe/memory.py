@@ -23,18 +23,20 @@ def calculate_keyword_score(text1: str, text2: str) -> float:
     return len(overlap) / len(kw1)
 
 class MemoryManager:
-    """Manages failure memory by analyzing log files."""
+    """Manages mission memory by analyzing log files."""
     
     def __init__(self, log_path: Union[str, Path] = ".chillvibe_logs.jsonl") -> None:
         self.log_path = Path(log_path)
 
-    def get_similar_failures(self, classification: str, signals: Optional[Union[List[str], Set[str]]] = None, limit: int = 3, current_prompt: Optional[str] = None, success_criteria: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Find recent failures with the same classification, ranked by keyword relevance and signals."""
+    def get_similar_missions(self, classification: Optional[str] = None, signals: Optional[Union[List[str], Set[str]]] = None, limit: int = 3, current_prompt: Optional[str] = None, success_criteria: Optional[List[str]] = None, statuses: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Find missions ranked by keyword relevance, signals, and status."""
         if not self.log_path.exists():
             return []
             
         signals_set = set(signals or [])
-        failures: List[Dict[str, Any]] = []
+        # Default to FAILED/OVER_BUDGET if no statuses provided, for backward compatibility of 'get_similar_failures' intent
+        target_statuses = statuses or ["FAILED", "OVER_BUDGET", "COMPLETED"]
+        missions: List[Dict[str, Any]] = []
         
         # Define signal weights
         SIGNAL_WEIGHTS = {
@@ -51,60 +53,80 @@ class MemoryManager:
                 for line in f:
                     try:
                         entry = json.loads(line)
-                        if (entry.get("status") in ["FAILED", "OVER_BUDGET"] and 
-                            entry.get("classification") == classification):
+                        entry_status = entry.get("status")
+                        
+                        if entry_status not in target_statuses:
+                            continue
                             
-                            # Calculate relevance score based on weighted signal matching
-                            entry_signals = entry.get("signals") or []
-                            score = 0.0
-                            if signals_set:
-                                # Count matches with weights
-                                for s in signals_set:
-                                    if s in entry_signals:
-                                        # High priority: matching signals are strong indicators
-                                        score += SIGNAL_WEIGHTS.get(s, 2) * 2
+                        # If classification is provided, filter by it (mainly for failure matching)
+                        if classification and entry.get("classification") != classification:
+                            # If we are looking for successes, we might not have a classification
+                            if entry_status != "COMPLETED":
+                                continue
+                        
+                        # Calculate relevance score
+                        score = 0.0
+                        
+                        # Status-based weighting: Successes are valuable patterns
+                        if entry_status == "COMPLETED":
+                            score += 5.0
+                        
+                        # Signal matching
+                        entry_signals = entry.get("signals") or []
+                        if signals_set:
+                            for s in signals_set:
+                                if s in entry_signals:
+                                    score += SIGNAL_WEIGHTS.get(s, 2) * 2
+                        
+                        # Keyword similarity ranking
+                        if current_prompt:
+                            prompt_similarity = calculate_keyword_score(current_prompt, entry.get("agent_prompt", ""))
+                            score += prompt_similarity * 10 
                             
-                            # Keyword similarity ranking
-                            if current_prompt:
-                                # Match against agent prompt
-                                prompt_similarity = calculate_keyword_score(current_prompt, entry.get("agent_prompt", ""))
-                                score += prompt_similarity * 10 
-                                
-                                # Match against objectives for better context
-                                objectives = entry.get("objectives") or []
-                                if objectives:
-                                    obj_text = " ".join(objectives)
-                                    obj_similarity = calculate_keyword_score(current_prompt, obj_text)
-                                    score += obj_similarity * 5
+                            objectives = entry.get("objectives") or []
+                            if objectives:
+                                obj_text = " ".join(objectives)
+                                obj_similarity = calculate_keyword_score(current_prompt, obj_text)
+                                score += obj_similarity * 5
 
-                            # Success criteria similarity weighting
-                            if success_criteria:
-                                entry_success_criteria = entry.get("success_criteria") or []
-                                if isinstance(entry_success_criteria, list) and entry_success_criteria:
-                                    sc_text1 = " ".join(success_criteria)
-                                    sc_text2 = " ".join(entry_success_criteria)
-                                    sc_similarity = calculate_keyword_score(sc_text1, sc_text2)
-                                    score += sc_similarity * 8
-                            
-                            entry["relevance_score"] = score
-                            failures.append(entry)
+                        # Success criteria similarity weighting
+                        if success_criteria:
+                            entry_success_criteria = entry.get("success_criteria") or []
+                            if isinstance(entry_success_criteria, list) and entry_success_criteria:
+                                sc_text1 = " ".join(success_criteria)
+                                sc_text2 = " ".join(entry_success_criteria)
+                                sc_similarity = calculate_keyword_score(sc_text1, sc_text2)
+                                score += sc_similarity * 8
+                        
+                        entry["relevance_score"] = score
+                        missions.append(entry)
                     except json.JSONDecodeError:
                         continue
         except Exception as e:
             print(f"[!] Warning: Could not read memory logs: {e}")
             
         # Rank by relevance score (primary) and timestamp (secondary)
-        # We sort by score descending, then by original order (which is chronological) reversed
-        ranked_failures = sorted(
-            failures, 
-            key=lambda x: (float(x.get("relevance_score", 0.0)), failures.index(x)), 
+        ranked_missions = sorted(
+            missions, 
+            key=lambda x: (float(x.get("relevance_score", 0.0)), missions.index(x)), 
             reverse=True
         )
         
-        return ranked_failures[:limit]
+        return ranked_missions[:limit]
+
+    def get_similar_failures(self, classification: str, signals: Optional[Union[List[str], Set[str]]] = None, limit: int = 3, current_prompt: Optional[str] = None, success_criteria: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Maintain backward compatibility for failure-specific lookup."""
+        return self.get_similar_missions(
+            classification=classification, 
+            signals=signals, 
+            limit=limit, 
+            current_prompt=current_prompt, 
+            success_criteria=success_criteria,
+            statuses=["FAILED", "OVER_BUDGET"]
+        )
 
     def get_top_lessons(self, classification: str, signals: Optional[Union[List[str], Set[str]]] = None, limit: int = 3, current_prompt: Optional[str] = None, success_criteria: Optional[List[str]] = None) -> List[str]:
-        """Extract 'Lessons Learned' from previous failures of the same classification, ranked by relevance."""
+        """Extract 'Lessons Learned' from previous failures, ranked by relevance."""
         failures = self.get_similar_failures(classification, signals=signals, limit=limit, current_prompt=current_prompt, success_criteria=success_criteria)
         lessons = []
         for f in failures:

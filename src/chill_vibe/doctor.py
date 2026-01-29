@@ -2,18 +2,30 @@ import os
 import sys
 import shutil
 import subprocess
-from typing import Dict, List, Optional, Tuple, Any, cast
+from typing import Dict, Optional, Tuple, Any, Protocol, runtime_checkable
 from .execution import CodingAgent
 
-try:
-    from google import genai
-except ImportError:
-    genai = cast(Any, None)
+@runtime_checkable
+class GenAIClient(Protocol):
+    def models(self) -> Any: ...
 
+@runtime_checkable
+class GitDumpModule(Protocol):
+    def dump(self) -> Any: ...
+
+genai: Optional[Any] = None
 try:
-    import git_dump
+    from google import genai as _genai
+    genai = _genai
 except ImportError:
-    git_dump = cast(Any, None)
+    pass
+
+git_dump: Optional[Any] = None
+try:
+    import git_dump as _git_dump
+    git_dump = _git_dump
+except ImportError:
+    pass
 
 def install_package(package_name: str) -> bool:
     """Attempt to install a python package using the current interpreter."""
@@ -80,7 +92,7 @@ def run_doctor(registry: Dict[str, CodingAgent], fix: bool = False) -> None:
             else:
                 print(f"[✗] API Connectivity: {msg}")
         else:
-            print(f"[✗] GEMINI_API_KEY: Set but invalid format (should start with 'AIza')")
+            print("[✗] GEMINI_API_KEY: Set but invalid format (should start with 'AIza')")
     else:
         print("[✗] GEMINI_API_KEY: Not set (Phase B reasoning will fail)")
 
