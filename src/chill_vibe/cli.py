@@ -7,7 +7,7 @@ from .config import get_agent_registry, load_config, get_global_config, init_pro
 from .constants import DEFAULT_CONFIG
 from .doctor import run_doctor, validate_environment
 from .context import run_git_dump
-from .reasoning import get_strategic_reasoning, log_mission, show_history, get_recovery_strategy
+from .reasoning import get_strategic_reasoning, log_mission, show_history, show_report, get_recovery_strategy
 from .execution import run_coding_agent, verify_success, get_file_baseline, get_change_summary, get_git_head, git_rollback
 
 def get_parser(registry):
@@ -40,6 +40,8 @@ def get_parser(registry):
                         help="Initialize a default .chillvibe.yaml in the current directory")
     parser.add_argument("--history", action="store_true",
                         help="Show mission history")
+    parser.add_argument("--report", action="store_true",
+                        help="Show a detailed summary report of mission costs and statuses")
     parser.add_argument("--max-cost", type=float, help="Max cumulative cost for the mission in USD")
     parser.add_argument("--version", action="version", version=f"chill-vibe v{__version__}")
     return parser
@@ -78,6 +80,10 @@ def main():
         show_history()
         sys.exit(0)
 
+    if args.report:
+        show_report()
+        sys.exit(0)
+
     if args.doctor:
         run_doctor(registry, fix=args.fix)
         sys.exit(0)
@@ -105,7 +111,7 @@ def main():
 
     # Initialize Budget Tracker
     from .budget import BudgetTracker
-    budget_tracker = BudgetTracker(max_cost=args.max_cost)
+    budget_tracker = BudgetTracker(max_cost=args.max_cost, model_id=args.model)
 
     # Phase A: Context Extraction
     exclude_patterns = config_data.get("exclude_patterns", [])

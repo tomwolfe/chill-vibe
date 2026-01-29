@@ -1,16 +1,19 @@
 import json
 from pathlib import Path
+from .pricing import get_rates
 
 class BudgetTracker:
     """Tracks and limits Gemini API token usage and costs."""
     
-    def __init__(self, max_cost=None, log_path=".chillvibe_logs.jsonl"):
+    def __init__(self, max_cost=None, log_path=".chillvibe_logs.jsonl", model_id=None):
         self.max_cost = max_cost
         self.total_tokens = 0
         self.prompt_tokens = 0
         self.candidate_tokens = 0
-        self.total_cost = 0.0 # Placeholder for cost calculation if needed
+        self.total_cost = 0.0
         self.log_path = Path(log_path)
+        self.model_id = model_id
+        self.rates = get_rates(model_id)
 
     def update_from_response(self, response):
         """Extract usage metadata from a Gemini API response and update totals."""
@@ -19,14 +22,17 @@ class BudgetTracker:
             
         usage = response.usage_metadata
         # google-genai response object has these fields
-        self.total_tokens += getattr(usage, 'total_token_count', 0)
-        self.prompt_tokens += getattr(usage, 'prompt_token_count', 0)
-        self.candidate_tokens += getattr(usage, 'candidates_token_count', 0)
+        p_tokens = getattr(usage, 'prompt_token_count', 0)
+        c_tokens = getattr(usage, 'candidates_token_count', 0)
+        t_tokens = getattr(usage, 'total_token_count', 0)
+
+        self.prompt_tokens += p_tokens
+        self.candidate_tokens += c_tokens
+        self.total_tokens += t_tokens
         
-        # Simple cost estimation (approximate, e.g., for Gemini 2.0 Flash)
-        # In a real app, this would be model-specific
-        # Assuming $0.10 per 1M tokens as a rough average for Flash/Pro
-        self.total_cost = (self.total_tokens / 1_000_000) * 0.10
+        # Dynamic cost calculation
+        self.total_cost += (p_tokens * self.rates["prompt_token_rate"])
+        self.total_cost += (c_tokens * self.rates["candidate_token_rate"])
 
     def is_over_budget(self):
         """Check if the cumulative cost has exceeded the limit."""

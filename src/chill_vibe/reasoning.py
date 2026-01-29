@@ -71,6 +71,38 @@ def show_history():
     except Exception as e:
         print(f"Error reading history: {e}")
 
+def show_report():
+    """Read and format a detailed summary report from .chillvibe_logs.jsonl."""
+    log_file = Path(".chillvibe_logs.jsonl")
+    if not log_file.exists():
+        print("No logs found for report.")
+        return
+
+    print(f"{ 'Timestamp':<20} | { 'Status':<12} | { 'Cost ($)':<10} | { 'Model':<25} | { 'Summary'}")
+    print("-" * 110)
+    
+    try:
+        with open(log_file, "r") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                    timestamp = entry.get("timestamp", "N/A")
+                    status = entry.get("status", "N/A")
+                    cost = entry.get("total_cost", 0.0)
+                    model = entry.get("model_id", "N/A")
+                    
+                    # Extract a short summary from objectives if available
+                    objectives = entry.get("objectives", [])
+                    summary = objectives[0] if objectives else entry.get("agent_prompt", "")[:40] + "..."
+                    if len(summary) > 40:
+                        summary = summary[:37] + "..."
+                        
+                    print(f"{timestamp:<20} | {status:<12} | {cost:<10.6f} | {model:<25} | {summary}")
+                except json.JSONDecodeError:
+                    continue
+    except Exception as e:
+        print(f"Error reading report: {e}")
+
 def validate_mission(mission_contract, codebase_context, model_id, config_data=None, budget_tracker=None):
     """Second-pass validation of the mission contract."""
     if genai is None:
@@ -345,7 +377,7 @@ def get_recovery_strategy(repo_path, model_id, original_prompt, failure_output, 
     
     # Read history for memory using MemoryManager
     memory = MemoryManager()
-    top_lessons = memory.get_top_lessons(tentative_class, signals=signals, limit=3)
+    top_lessons = memory.get_top_lessons(tentative_class, signals=signals, limit=3, current_prompt=original_prompt)
     
     history_context = ""
     if top_lessons:

@@ -80,3 +80,24 @@ def test_memory_manager_weighted_signals(tmp_path):
     assert failures2[0]["lessons_learned"] == "Strong match"
     assert failures2[1]["lessons_learned"] == "Medium match"
 
+def test_memory_manager_prompt_similarity(tmp_path):
+    log_file = tmp_path / ".chillvibe_logs.jsonl"
+    entries = [
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Different prompt", "agent_prompt": "Fix the bug in the calculator."},
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Similar prompt", "agent_prompt": "Upgrade the budget tracker to use dynamic pricing."},
+        {"status": "FAILED", "classification": "LOGIC", "lessons_learned": "Exact match", "agent_prompt": "Enhance memory.py to include basic string-similarity check."},
+    ]
+    
+    with open(log_file, "w") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+            
+    memory = MemoryManager(log_path=str(log_file))
+    
+    current_prompt = "Enhance memory.py to include basic string-similarity check."
+    failures = memory.get_similar_failures("LOGIC", current_prompt=current_prompt)
+    
+    assert failures[0]["lessons_learned"] == "Exact match"
+    assert failures[1]["lessons_learned"] == "Similar prompt"
+    assert failures[2]["lessons_learned"] == "Different prompt"
+

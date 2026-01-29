@@ -123,6 +123,25 @@ def run_doctor(registry, fix=False):
         else:
             print(f"[✓] Log file size: {size_mb:.2f} MB")
 
+    # 4c. Self-Healing: Check for missing agent-specific configs
+    print("\nSelf-Healing Config Checks:")
+    agent_configs = {
+        "aider": ".aider.conf.yml",
+        "gptme": "gptme.toml",
+    }
+    for agent_name, config_file in agent_configs.items():
+        if not os.path.exists(config_file):
+            print(f"  [!] {agent_name}: Config '{config_file}' is missing (Recommended for best performance)")
+            if fix or (sys.stdin.isatty() and input(f"  [?] Would you like to create a default '{config_file}'? (y/n): ").lower() == 'y'):
+                if agent_name == "aider":
+                    with open(config_file, "w") as f:
+                        f.write("auto-test: true\nread: [codebase_context.txt]\n")
+                    print(f"  [✓] Created default {config_file}")
+                elif agent_name == "gptme":
+                    with open(config_file, "w") as f:
+                        f.write("[tool.gptme]\nmodel = \"gpt-4\"\n")
+                    print(f"  [✓] Created default {config_file}")
+
     # 5. Check Agents
     print("\nAgent Availability:")
     for name, agent in registry.items():
