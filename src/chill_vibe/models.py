@@ -57,7 +57,7 @@ class MissionContract(BaseModel):
         # Pydantic already handles basic type validation and empty checks via validators
         
         # Validate success criteria formats
-        valid_prefixes = ["exists:", "contains:", "not_contains:", "pytest", "ruff", "no_new_files"]
+        valid_prefixes = ["exists:", "contains:", "not_contains:", "pytest", "ruff", "mypy", "no_new_files"]
         for criterion in self.success_criteria:
             if ":" in criterion:
                 prefix = criterion.split(":", 1)[0] + ":"

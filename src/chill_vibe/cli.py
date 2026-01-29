@@ -234,6 +234,8 @@ def main() -> None:
                     # Classify and recover
                     agent = registry[args.agent]
                     failure_output_list = list(agent.last_output)
+                    diff_stats = calculate_diff_stats(args.path)
+                    
                     recovery_prompt, classification, lessons_learned, signals = get_recovery_strategy(
                         args.path, 
                         args.model, 
@@ -242,7 +244,8 @@ def main() -> None:
                         exit_code=exit_code,
                         config_data=config_data,
                         verification_results=verification_results,
-                        budget_tracker=budget_tracker
+                        budget_tracker=budget_tracker,
+                        diff_stats=diff_stats
                     )
                     
                     print(f"[*] Failure classification: {classification}")

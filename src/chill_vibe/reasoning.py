@@ -373,7 +373,7 @@ def classify_failure_signals(exit_code: int, last_output: List[str]) -> List[str
             
     return signals
 
-def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, failure_output: List[str], exit_code: Optional[int] = None, config_data: Optional[Dict[str, Any]] = None, verification_results: Optional[List[Dict[str, Any]]] = None, budget_tracker: Optional[BudgetTracker] = None) -> Tuple[str, str, Optional[str], List[str]]:
+def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, failure_output: List[str], exit_code: Optional[int] = None, config_data: Optional[Dict[str, Any]] = None, verification_results: Optional[List[Dict[str, Any]]] = None, budget_tracker: Optional[BudgetTracker] = None, diff_stats: Optional[Dict[str, int]] = None) -> Tuple[str, str, Optional[str], List[str]]:
     """Generate a recovery strategy after an agent fails, with grounded classification and memory."""
     if genai is None:
         print("Error: google-genai SDK not found.")
@@ -383,6 +383,15 @@ def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, f
     
     signals = classify_failure_signals(exit_code, failure_output) if exit_code is not None else []
     signals_str = ", ".join(signals) if signals else "NONE"
+    
+    # Format diff stats if available
+    diff_stats_context = ""
+    if diff_stats:
+        diff_stats_context = (
+            "--- DIFF STATS ---\n"
+            f"Lines Added: {diff_stats.get('added', 0)}\n"
+            f"Lines Removed: {diff_stats.get('removed', 0)}\n\n"
+        )
     
     # Map signals to a tentative classification for memory lookup
     tentative_class = "UNKNOWN"
@@ -451,6 +460,7 @@ def get_recovery_strategy(repo_path: str, model_id: str, original_prompt: str, f
         "- ENVIRONMENT: Missing dependencies, environment variables, or infrastructure issues.\n"
         "- AMBIGUITY: Original instructions were unclear or contradictory.\n"
         "- UNKNOWN: Failure reason is not apparent from the output.\n\n"
+        f"{diff_stats_context}"
         f"{verification_context}\n"
         f"{history_context}\n"
         "--- ORIGINAL PROMPT ---\n"

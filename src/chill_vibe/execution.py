@@ -344,6 +344,23 @@ def verify_success(success_criteria: List[str], repo_path: str, file_baseline: O
                     "exit_code": process.returncode
                 }
 
+            elif criterion.startswith("mypy"):
+                # Run mypy
+                args = criterion[len("mypy"):].strip()
+                cmd = f"mypy {args}" if args else "mypy ."
+                process = subprocess.run(cmd, shell=True, cwd=repo_path, capture_output=True, text=True)
+                passed = (process.returncode == 0)
+                result["passed"] = passed
+                result["message"] = f"Mypy exited with code {process.returncode}"
+                
+                stdout_lines = (process.stdout or "").splitlines()
+                stderr_lines = (process.stderr or "").splitlines()
+                result["details"] = {
+                    "stdout": "\n".join(stdout_lines[-20:]),
+                    "stderr": "\n".join(stderr_lines[-20:]),
+                    "exit_code": process.returncode
+                }
+
             elif criterion.startswith("eval:"):
                 # Run a python snippet to verify state
                 code = criterion[len("eval:"):].strip()
